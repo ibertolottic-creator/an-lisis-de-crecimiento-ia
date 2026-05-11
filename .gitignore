@@ -1,0 +1,22 @@
+# Archivos temporales de Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Archivos temporales de editores
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Archivos de sistema Mac
+.DS_Store
+
+# Node modules (si se usan en el futuro)
+node_modules/
+
+# Archivos de respaldo Excel (son pesados y redundantes)
+~$*.xlsx
+~$*.docx
