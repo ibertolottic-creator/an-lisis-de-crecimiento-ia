@@ -1,0 +1,32 @@
+Aquí tienes el documento estructurado (un "Prompt Maestro" o pauta) diseñado específicamente para que puedas copiarlo y pegarlo en la IA de Google (Antigravity o Gemini).
+Este documento contiene todas las instrucciones, el contexto, las fórmulas exactas y el formato de salida requerido para que la IA procese tus archivos CSV ("Análisis de crecimiento estudiantil - Posgrado.csv" y "Análisis de crecimiento estudiantil - Pregrado.csv") y genere las tablas automáticamente sin errores.
+COPIAR DESDE AQUÍ PARA LA IA
+Rol y Contexto:Actúa como un Analista de Datos Senior experto en Inteligencia de Negocios y Gestión Estratégica de Matrícula (Strategic Enrollment Management). Tu tarea es procesar dos bases de datos en formato CSV ("Análisis de crecimiento estudiantil - Posgrado.csv" y "Análisis de crecimiento estudiantil - Pregrado.csv") 1, 2. Debes transformar estos datos operativos en dos cuadros de mando llamados "Base de Datos de Gestión Estratégica por Programa" (una para Pregrado y otra para Posgrado).
+Instrucciones de Procesamiento:
+Lee los archivos CSV proporcionados. Los datos están divididos en Etapas (1, 2, 3 y 4) que corresponden a los meses de Enero, Febrero, Marzo y Abril 1, 2.
+Omite las filas de "Totales", "Total AP" o "Total sin AP" para esta vista. Céntrate únicamente en las filas de los programas académicos individuales (Ej. Educación, Contabilidad, Maestría en Salud Ocupacional, etc.) 1, 2.
+Aplica las fórmulas descritas en el "Diccionario de Métricas" para crear nuevas columnas de indicadores absolutos y tasas relativas 3-7.
+Diccionario de Fórmulas a Calcular:
+Indicadores Estratégicos Absolutos (Flujos en Cifras Enteras):
+Pérdida de Conversión Comercial: Se calcula restando los Admitidos Matriculados a los Admitidos 6, 8. Mide cuántos postulantes viables se cayeron en el último paso 9.
+Deserción Neta: Se calcula restando los Recuperados a los No matriculados 6, 10. Mide el saldo real del abandono 8.
+Brecha de Reemplazo: Se calcula restando los Admitidos Matriculados a los Egresados 6, 11. Si es positivo, se pierde masa crítica 10.
+Crecimiento Neto Estudiantil: Se calcula mediante la fórmula (Admitidos Matriculados + Recuperados) - (No matriculados + Egresados) 6, 12. Mide la variación neta de la matrícula 11.
+Indicadores Estratégicos Relativos (Rendimiento en Tasas %):
+Tasa Efectividad Comercial: Se calcula con la fórmula (Admitidos Matriculados / Admitidos) * 100 7, 13.
+Tasa Éxito Retención: Su fórmula es (Recuperados / No matriculados) * 100 7. Excepción: Si "No matriculados" es 0, el resultado debe mostrar "N/A*" para evitar error de división por cero.
+Tasa Renovación Genuina: Se calcula como (Admitidos Matriculados / Matrícula regular a distancia) * 100 7, 14. Excepción: Si la "Matrícula regular a distancia" es 0 (como en programas nuevos), el resultado debe mostrar "N/A*".
+Proporción de Matrícula en Cierre (Solo aplica para Pregrado): Su fórmula es (Matrícula regular presencial / TOTAL Alumos matriculados) * 100 7, 15.
+Estructura de Salida Esperada:Genera dos tablas en formato Markdown unificando todos los meses (un mes debajo de otro en la misma tabla).
+Estructura exacta para la Tabla 1 (POSGRADO):Columnas: | Mes | Programa | Egresados | No matrí. | Admitidos | Admitidos Matriculados | Recuperados | Matríc. regular a Distancia | Estudiantes matrí. TOTAL | Pérdida de Conversión Comercial | Deserción Neta | Brecha de Reemplazo | Crecimiento Neto Estudiantil | Tasa Efectividad Comercial | Tasa Éxito Retención | Tasa Renovación Genuina |
+Estructura exacta para la Tabla 2 (PREGRADO):Columnas: | Mes | Programa | Egresados | No matrí. | Admitidos | Admitidos Matriculados | Recuperados | Matríc. regular a Distancia | Matríc. regular Presencial | Estudiantes matrí. TOTAL | Pérdida de Conversión Comercial | Deserción Neta | Brecha de Reemplazo | Crecimiento Neto Estudiantil | Tasa Efectividad Comercial | Tasa Éxito Retención | Tasa Renovación Genuina | Proporción de Matrícula en Cierre |
+Reglas de Formato:
+Redondea todos los porcentajes a un (1) decimal y añade el símbolo "%".
+En la columna "Mes", usa los nombres de los meses (Enero, Febrero, Marzo, Abril) basándote en el número de Etapa (1, 2, 3, 4) 1, 2.
+Añade el signo "+" en los números positivos de la columna "Crecimiento Neto Estudiantil" para facilitar la lectura visual.
+FIN DE LA COPIA
+¿Por qué este prompt funcionará bien con la IA?
+Le otorga el contexto de los documentos teóricos que definimos sobre el "Crecimiento Neto", la "Brecha de Reemplazo" y el modelo de retención 8, 10-12.
+Le indica exactamente qué operaciones matemáticas hacer con las columnas originales de tus archivos CSV 1, 2.
+Le advierte sobre los errores matemáticos (las divisiones por cero en los meses piloto de Marzo y Abril) para que ponga "N/A*" en lugar de romper la tabla.
+

@@ -1,0 +1,1373 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Análisis de Crecimiento USMP Virtual 2026</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .card { background: white; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); padding: 1.5rem; transition: transform 0.2s, box-shadow 0.2s; }
+        .kpi-card:hover { transform: translateY(-4px); box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); cursor: pointer; }
+        .metric-value { font-size: 2rem; font-weight: 700; letter-spacing: -0.025em; }
+        .metric-label { font-size: 0.875rem; color: #6b7280; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+        .positive { color: #10b981; }
+        .negative { color: #ef4444; }
+        .neutral { color: #3b82f6; }
+        .badge-above { background-color: #d1fae5; color: #065f46; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        .badge-below { background-color: #fee2e2; color: #991b1b; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 600; }
+        
+        /* Animación para el Modal y Loader */
+        @keyframes fadeIn { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .modal-content { animation: fadeIn 0.3s ease-out forwards; }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1); border-left-color: #dc2626; border-radius: 50%;
+            width: 50px; height: 50px; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="text-gray-800 antialiased p-4 md:p-8">
+
+    <!-- Pantalla de Carga Interactiva para Google Apps Script -->
+    <div id="loadingOverlay" style="display: none;" class="fixed inset-0 bg-white/95 z-[9999] flex-col items-center justify-center text-center p-6">
+        <div id="loadingSpinner" class="spinner"></div>
+        <h2 id="loadingTitle" class="mt-4 text-2xl font-bold text-gray-800">Sincronizando...</h2>
+        <p class="text-base text-gray-600 mt-2 max-w-lg" id="loadingText">Conectando con la base de datos de Google Sheets de la USMP Virtual</p>
+        <button id="closeErrorBtn" onclick="ocultarLoader()" style="display: none;" class="mt-6 px-6 py-2 bg-slate-800 text-white font-semibold rounded hover:bg-slate-700 transition shadow-md">Usar Panel Offline (Backup)</button>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="mb-6">
+            <div class="flex items-center gap-4 mb-6 pb-4 border-b border-gray-200">
+                <img src="https://lh3.googleusercontent.com/d/1PKsD5DdSr5gzxpoh0mC-GVnBx5PAgp7Q" alt="Logo USMP" class="h-16 md:h-20 object-contain">
+                <h2 class="text-xl md:text-2xl font-bold text-red-600 tracking-wide">UNIVERSIDAD DE SAN MARTÍN DE PORRES</h2>
+            </div>
+            <h1 class="text-3xl md:text-4xl font-bold text-red-600 mb-2">Sistema de Análisis de Crecimiento USMP Virtual 2026</h1>
+            <p class="text-gray-600">Gestión estratégica y control de matrícula basado en métricas de conversión, retención y crecimiento neto.</p>
+        </header>
+
+        <!-- Estado de Conexión y Backup Offline -->
+        <div class="card mb-8 shadow-md border-l-4 border-indigo-500 bg-indigo-50">
+            <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+                <div>
+                    <h3 class="font-bold text-indigo-900 flex items-center gap-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        Estado del Sistema
+                    </h3>
+                    <p class="text-sm text-indigo-700 mt-1" id="uploadStatus">Iniciando conexión a Google Sheets...</p>
+                </div>
+                <div class="flex flex-wrap gap-3 items-center">
+                    <label class="cursor-pointer bg-white text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg font-semibold border border-indigo-200 transition shadow-sm flex items-center gap-2">
+                        <input type="file" class="hidden" accept=".csv" onchange="handleFileUpload(event, 'pregrado')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        CSV Pregrado
+                    </label>
+                    <label class="cursor-pointer bg-white text-indigo-700 hover:bg-indigo-100 px-4 py-2 rounded-lg font-semibold border border-indigo-200 transition shadow-sm flex items-center gap-2">
+                        <input type="file" class="hidden" accept=".csv" onchange="handleFileUpload(event, 'posgrado')">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        CSV Posgrado
+                    </label>
+                    <button onclick="restaurarDemo()" class="text-sm text-indigo-500 hover:text-indigo-800 ml-2 underline decoration-indigo-300 underline-offset-4">Usar Demo</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Controles de Filtro -->
+        <div class="card mb-8 flex flex-col md:flex-row gap-4 items-end bg-blue-900 text-white shadow-lg">
+            <div class="w-full md:w-1/3">
+                <label class="block text-sm font-medium mb-1 text-blue-200">Nivel Académico</label>
+                <select id="filtroNivel" class="w-full bg-blue-800 border-none rounded-lg p-2.5 text-white focus:ring-2 focus:ring-blue-400 font-medium cursor-pointer">
+                    <option value="institucional" selected>Total Institucional (General)</option>
+                    <option value="pregrado">Pregrado (Carreras)</option>
+                    <option value="posgrado">Posgrado (Maestrías)</option>
+                </select>
+            </div>
+            <div class="w-full md:w-1/3">
+                <label class="block text-sm font-medium mb-1 text-blue-200">Mes de Análisis</label>
+                <select id="filtroMes" class="w-full bg-blue-800 border-none rounded-lg p-2.5 text-white focus:ring-2 focus:ring-blue-400 font-medium cursor-pointer">
+                    <!-- Opciones de meses llenadas dinámicamente -->
+                </select>
+            </div>
+            <div class="w-full md:w-1/3">
+                <label class="block text-sm font-medium mb-1 text-blue-200">Programa Académico</label>
+                <select id="filtroPrograma" class="w-full bg-blue-800 border-none rounded-lg p-2.5 text-white focus:ring-2 focus:ring-blue-400 font-medium cursor-pointer">
+                    <!-- Opciones de programa llenadas dinámicamente -->
+                </select>
+            </div>
+        </div>
+
+        <!-- Alertas y Diagnóstico -->
+        <div id="panelDiagnostico" class="mb-8 p-5 rounded-lg bg-white border-l-4 border-blue-500 shadow-sm relative">
+            <h3 class="font-bold text-lg mb-2 flex items-center gap-2 justify-between">
+                <span class="flex items-center gap-2">
+                    <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    Diagnóstico Estratégico
+                </span>
+                <button onclick="solicitarAnalisisIA()" id="btnIA" class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-white font-semibold py-1.5 px-4 rounded-full text-sm hover:opacity-90 transition shadow-md flex items-center gap-2">
+                    ✨ Analizar con IA
+                </button>
+            </h3>
+            <p id="textoDiagnostico" class="text-gray-700 text-sm leading-relaxed">Cargando análisis estratégico...</p>
+            
+            <!-- Contenedor para IA -->
+            <div id="contenedorIA" class="mt-4 pt-4 border-t border-gray-100 hidden">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 text-transparent bg-clip-text font-bold text-sm">Gemini AI Assistant</span>
+                </div>
+                <div id="loadingIA" class="hidden flex items-center gap-2 text-sm text-gray-500 mb-2">
+                    <div class="spinner !w-5 !h-5 !border-2"></div>
+                    <span>La IA está analizando los datos...</span>
+                </div>
+                <div id="textoIA" class="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap"></div>
+            </div>
+        </div>
+
+        <!-- KPIs Principales (Interactivos) -->
+        <div class="mb-2 text-sm text-gray-500 flex items-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
+            Haz clic en las tarjetas para ver el análisis detallado de la métrica
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+            <div class="card kpi-card border-t-4 border-blue-500 relative group" onclick="abrirModalKPI('total')">
+                <div class="absolute top-4 right-4 text-blue-300 group-hover:text-blue-500 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div class="metric-label">Total Matriculados</div>
+                <div id="kpiTotal" class="metric-value text-gray-900">0</div>
+                <div class="text-xs text-gray-500 mt-2">Población activa</div>
+            </div>
+            
+            <div class="card kpi-card border-t-4 border-emerald-500 relative group" onclick="abrirModalKPI('crecimiento')">
+                <div class="absolute top-4 right-4 text-emerald-300 group-hover:text-emerald-500 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div class="metric-label">Crecimiento Neto</div>
+                <div id="kpiCrecimiento" class="metric-value">0</div>
+                <div class="text-xs text-gray-500 mt-2">Entradas vs Salidas</div>
+            </div>
+            
+            <div class="card kpi-card border-t-4 border-purple-500 relative group" onclick="abrirModalKPI('efectividad')">
+                <div class="absolute top-4 right-4 text-purple-300 group-hover:text-purple-500 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div class="metric-label">Efectividad Comercial</div>
+                <div class="flex items-baseline gap-1 justify-center">
+                    <div id="kpiEfectividad" class="metric-value">0%</div>
+                    <div id="kpiEfeAbsoluto" class="text-sm font-medium text-gray-500"></div>
+                </div>
+                <div class="text-xs text-gray-500 mt-2">Cierre de Ventas</div>
+            </div>
+            
+            <!-- TARJETA ACTUALIZADA: Balance de Retención -->
+            <div class="card kpi-card border-t-4 border-amber-500 relative group" onclick="abrirModalKPI('retencion')">
+                <div class="absolute top-4 right-4 text-amber-300 group-hover:text-amber-500 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div class="metric-label">Balance de Retención</div>
+                <div class="flex items-baseline gap-1 justify-center">
+                    <div id="kpiRetencion" class="metric-value">0</div>
+                </div>
+                <div id="kpiRetAbsoluto" class="text-xs text-gray-500 mt-2 font-medium text-center">Recup. vs Fugas</div>
+            </div>
+
+            <div class="card kpi-card border-t-4 border-red-500 relative group" onclick="abrirModalKPI('desercion')">
+                <div class="absolute top-4 right-4 text-red-300 group-hover:text-red-500 transition-colors">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div class="metric-label">Tasa Deserción</div>
+                <div class="flex items-baseline gap-1 justify-center">
+                    <div id="kpiDesercion" class="metric-value">0%</div>
+                    <div id="kpiDesAbsoluto" class="text-sm font-medium text-gray-500"></div>
+                </div>
+                <div class="text-xs text-gray-500 mt-2">Bajas / Total Activos</div>
+            </div>
+        </div>
+
+        <!-- Modal de Detalle de KPI -->
+        <div id="kpiModal" class="fixed inset-0 z-50 hidden bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="modal-content bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[90vh] overflow-hidden">
+                <div id="modalHeader" class="p-5 border-b flex justify-between items-center text-white bg-blue-600">
+                    <h3 id="modalTitle" class="text-xl font-bold flex items-center gap-2">Título de la Métrica</h3>
+                    <button onclick="cerrarModal()" class="text-white hover:text-gray-200 focus:outline-none transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-6 overflow-y-auto">
+                    <div class="flex items-end gap-4 mb-6 pb-6 border-b border-gray-100">
+                        <div>
+                            <p class="text-sm text-gray-500 uppercase font-semibold tracking-wider">Resultado Actual</p>
+                            <p id="modalCurrentValue" class="text-4xl font-bold text-gray-900 leading-none mt-1">0</p>
+                        </div>
+                    </div>
+                    <div class="space-y-5 text-gray-700 text-sm">
+                        <div>
+                            <h4 class="font-bold text-gray-900 mb-1 flex items-center gap-2">
+                                <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>
+                                ¿Cómo se calcula?
+                            </h4>
+                            <p id="modalFormula" class="bg-gray-50 p-3 rounded border border-gray-100 font-mono text-xs"></p>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-gray-900 mb-1">¿Por qué es importante e Interpretación Técnica?</h4>
+                            <p id="modalGeneralInterpretation"></p>
+                        </div>
+                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <h4 class="font-bold text-blue-900 mb-1">Análisis de tu cifra actual</h4>
+                            <p id="modalSpecificAnalysis" class="text-blue-800"></p>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-gray-900 mb-1">Impacto Estratégico y Recomendaciones</h4>
+                            <p id="modalRecommendations" class="pl-4 border-l-4 border-emerald-500"></p>
+                        </div>
+                    </div>
+                </div>
+                <div class="p-4 border-t bg-gray-50 text-right">
+                    <button onclick="cerrarModal()" class="px-5 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">Entendido</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal para Gráficos -->
+        <div id="chartModal" class="fixed inset-0 z-50 hidden bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4">
+            <div class="modal-content bg-white rounded-2xl shadow-2xl max-w-2xl w-full flex flex-col max-h-[90vh] overflow-hidden">
+                <div id="cModalHeader" class="p-5 border-b flex justify-between items-center text-white bg-blue-600">
+                    <h3 id="cModalTitle" class="text-xl font-bold flex items-center gap-2">Título</h3>
+                    <button onclick="cerrarModalGrafico()" class="text-white hover:text-gray-200 focus:outline-none transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                    </button>
+                </div>
+                <div class="p-6 overflow-y-auto space-y-5 text-gray-700 text-sm">
+                    <div>
+                        <h4 class="font-bold text-gray-900 mb-1 flex items-center gap-2"><svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg> ¿Cómo se mide / calcula?</h4>
+                        <p id="cModalCalculo" class="bg-gray-50 p-3 rounded border border-gray-100 font-mono text-xs"></p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900 mb-1">¿Por qué es importante?</h4>
+                        <p id="cModalImportancia"></p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900 mb-1">¿Cómo se interpreta?</h4>
+                        <p id="cModalInterpretacion"></p>
+                    </div>
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                        <h4 class="font-bold text-blue-900 mb-1">Interpretación de la cifra mostrada (Aplicación)</h4>
+                        <p id="cModalAplicacion" class="text-blue-800 leading-relaxed"></p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900 mb-1">¿Cómo afecta?</h4>
+                        <p id="cModalAfecta" class="text-red-700 font-medium"></p>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-gray-900 mb-1">Recomendaciones</h4>
+                        <p id="cModalRecomendaciones" class="pl-4 border-l-4 border-emerald-500"></p>
+                    </div>
+                </div>
+                <div class="p-4 border-t bg-gray-50 text-right">
+                    <button onclick="cerrarModalGrafico()" class="px-5 py-2 bg-gray-800 hover:bg-gray-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">Entendido</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Análisis Comparativo vs Institucional -->
+        <div class="card mb-8 shadow-sm mt-4">
+            <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center gap-2">
+                <svg class="w-5 h-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                Análisis Comparativo vs Nivel Institucional
+            </h3>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6" id="panelComparativo"></div>
+        </div>
+
+        <!-- Gráficos Principales -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-8">
+            <div class="card">
+                <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                    <span>Embudo de Captación Comercial - Efectividad Comercial</span>
+                    <button onclick="abrirModalGrafico('embudo')" class="text-blue-400 hover:text-blue-600 focus:outline-none transition-colors" title="Ver análisis de métrica">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="chartEmbudo"></canvas>
+                </div>
+                <p class="text-xs text-gray-500 mt-4 text-center">Fuga: Admitidos viables que no concretaron su pago final.</p>
+            </div>
+
+            <div class="card">
+                <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                    <span>Dinámica de Flujo: Entradas vs Salidas - Crecimiento Neto</span>
+                    <button onclick="abrirModalGrafico('flujo')" class="text-blue-400 hover:text-blue-600 focus:outline-none transition-colors" title="Ver análisis de métrica">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="chartFlujo"></canvas>
+                </div>
+                <p class="text-xs text-gray-500 mt-4 text-center">Verde (Nuevos + Recuperados) vs Rojo (Egresados + Deserción Bruta).</p>
+            </div>
+            
+            <div class="card" id="cardComposicion">
+                <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                    <span>Composición de Matrícula (Distancia vs Presencial)</span>
+                    <button onclick="abrirModalGrafico('modalidad')" class="text-blue-400 hover:text-blue-600 focus:outline-none transition-colors" title="Ver análisis de métrica">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h3>
+                <div class="relative h-64 w-full flex justify-center">
+                    <canvas id="chartModalidad"></canvas>
+                </div>
+                <p class="text-xs text-gray-500 mt-4 text-center">Indica la población de presencial (planes antiguos) en cuenta regresiva.</p>
+            </div>
+
+            <div class="card">
+                <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                    <span>Brecha de Reemplazo (Renovación)</span>
+                    <button onclick="abrirModalGrafico('reemplazo')" class="text-blue-400 hover:text-blue-600 focus:outline-none transition-colors" title="Ver análisis de métrica">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="chartReemplazo"></canvas>
+                </div>
+                <p class="text-xs text-gray-500 mt-4 text-center">¿Las ventas nuevas superan el volumen de alumnos que egresan?</p>
+            </div>
+
+            <!-- 5to Gráfico: Captación vs Abandono -->
+            <div class="card">
+                <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                    <span>Rotación: Captación vs. Deserción Bruta</span>
+                    <button onclick="abrirModalGrafico('adquisicionVsAbandono')" class="text-slate-600 hover:text-slate-800 focus:outline-none transition-colors" title="Ver análisis de métrica (Perspectiva Analista)">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h3>
+                <div class="relative h-64 w-full">
+                    <canvas id="chartAdqVsAbandono"></canvas>
+                </div>
+                <p class="text-xs text-gray-500 mt-4 text-center">Compara si tus ventas logran tapar la fuga operativa sin considerar recuperados.</p>
+            </div>
+        </div>
+
+        <!-- Evolución Temporal -->
+        <div class="mb-12">
+            <h2 class="text-2xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
+                Evolución Histórica General (Acumulado Anual)
+            </h2>
+            
+            <div class="card border-l-4 border-blue-600 mb-8">
+                <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                    <span>Evolución Histórica: Total Matriculados Activos</span>
+                    <button onclick="abrirModalGrafico('trendTotal')" class="text-blue-400 hover:text-blue-600 focus:outline-none transition-colors" title="Ver análisis de métrica">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h3>
+                <div class="relative h-72 w-full">
+                    <canvas id="chartTrendTotal"></canvas>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <!-- Evolución del Crecimiento Neto -->
+                <div class="card border-l-4 border-emerald-500">
+                    <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                        <span>Evolución del Crecimiento Neto</span>
+                        <button onclick="abrirModalGrafico('trendCrecimiento')" class="text-emerald-400 hover:text-emerald-600 focus:outline-none transition-colors" title="Ver análisis de métrica">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </button>
+                    </h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="chartTrendCrecimiento"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Tendencia de Efectividad Comercial -->
+                <div class="card border-l-4 border-purple-500">
+                    <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                        <span>Tendencia de Efectividad Comercial</span>
+                        <button onclick="abrirModalGrafico('trendEfectividad')" class="text-purple-400 hover:text-purple-600 focus:outline-none transition-colors" title="Ver análisis de métrica">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </button>
+                    </h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="chartTrendEfectividad"></canvas>
+                    </div>
+                </div>
+                
+                <!-- Histograma de Tasa de Deserción Mensual vs Benchmark -->
+                <div class="card border-l-4 border-red-500">
+                    <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                        <span>Tasa de Deserción Mensual vs Benchmark</span>
+                        <button onclick="abrirModalGrafico('benchmarkDesercion')" class="text-red-400 hover:text-red-600 focus:outline-none transition-colors" title="Ver análisis de métrica (Perspectiva Analista)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </button>
+                    </h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="chartTrendDesercion"></canvas>
+                    </div>
+                </div>
+
+                <!-- Histórico de Captación vs Deserción -->
+                <div class="card border-l-4 border-slate-800">
+                    <h3 class="font-bold text-gray-800 mb-4 border-b pb-2 flex items-center justify-between">
+                        <span>Histórico: Captación vs. Deserción Bruta</span>
+                        <button onclick="abrirModalGrafico('trendAdqVsAbandono')" class="text-slate-400 hover:text-slate-600 focus:outline-none transition-colors" title="Ver análisis de métrica (Perspectiva Analista)">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        </button>
+                    </h3>
+                    <div class="relative h-64 w-full">
+                        <canvas id="chartTrendAdqVsAbandono"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SECCIÓN AGRUPADA: Matriz Estratégica y Tendencias Comparativas -->
+        <div class="mb-12 pt-8 border-t-2 border-gray-200">
+            <h2 class="text-2xl font-bold text-gray-900 mb-6 flex items-center gap-2">
+                <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+                Análisis Estratégico Avanzado y Comparativo
+            </h2>
+
+            <!-- Matriz Estratégica de Rendimiento (Cuadrante BCG / Dispersión) -->
+            <div class="card mb-8 shadow-lg border-t-4 border-indigo-600">
+                <h3 class="font-bold text-gray-900 mb-2 flex items-center justify-between text-xl">
+                    <span class="flex items-center gap-2">
+                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg>
+                        Matriz Estratégica de Rendimiento (Efectividad vs Retención)
+                    </span>
+                    <button onclick="abrirModalGrafico('matriz')" class="text-indigo-500 hover:text-indigo-700 focus:outline-none transition-colors" title="Ver cómo se interpreta este cuadrante">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                    </button>
+                </h3>
+                <p class="text-sm text-gray-600 mb-6">Cruza la capacidad de vender (Eje X) contra el saldo de alumnos retenidos (Eje Y). El tamaño de la burbuja representa el total de alumnos del programa. Ubica rápidamente a tus programas <strong>"Estrellas"</strong> (Arriba a la derecha) o los <strong>"Críticos"</strong> (Abajo a la izquierda).</p>
+                
+                <div class="relative h-96 w-full">
+                    <canvas id="chartMatriz"></canvas>
+                </div>
+            </div>
+
+            <!-- VISTA: Tendencias Comparativas -->
+            <div>
+                <h3 id="tituloComparativa" class="text-xl font-bold text-gray-900 mb-4 flex items-center gap-2">
+                    <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
+                    Tendencias Comparativas: Pregrado vs Posgrado
+                </h3>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="card border-l-4 border-blue-500">
+                        <h4 class="font-bold text-gray-800 mb-4 border-b pb-2">Evolución: Total Matriculados</h4>
+                        <div class="relative h-64 w-full"><canvas id="chartCompTotal"></canvas></div>
+                    </div>
+                    <div class="card border-l-4 border-emerald-500">
+                        <h4 class="font-bold text-gray-800 mb-4 border-b pb-2">Evolución: Crecimiento Neto</h4>
+                        <div class="relative h-64 w-full"><canvas id="chartCompCrec"></canvas></div>
+                    </div>
+                    <div class="card border-l-4 border-purple-500">
+                        <h4 class="font-bold text-gray-800 mb-4 border-b pb-2">Tendencia: Efectividad Comercial</h4>
+                        <div class="relative h-64 w-full"><canvas id="chartCompEfe"></canvas></div>
+                    </div>
+                    <div class="card border-l-4 border-amber-500">
+                        <h4 class="font-bold text-gray-800 mb-4 border-b pb-2">Tendencia: Balance de Retención</h4>
+                        <div class="relative h-64 w-full"><canvas id="chartCompRet"></canvas></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        // Variables Globales
+        let db = { pregrado: [], posgrado: [] };
+        let charts = {};
+        let datosActualesGlobal = null; 
+        const palette = ['#3b82f6', '#f59e0b', '#10b981', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16', '#64748b', '#f43f5e'];
+
+        // --- 1. PROCESAMIENTO INICIAL Y CONEXIÓN GAS ---
+        window.onload = async () => {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = 'flex'; 
+            
+            if (typeof google !== 'undefined' && typeof google.script !== 'undefined' && typeof google.script.run !== 'undefined') {
+                document.getElementById('loadingText').textContent = "Conectando mediante Apps Script...";
+                
+                const timeoutId = setTimeout(() => {
+                    mostrarErrorLoader("Tiempo de espera agotado. Autoriza la aplicación en Google Apps Script.");
+                }, 15000);
+
+                google.script.run
+                    .withSuccessHandler(function(data) {
+                        clearTimeout(timeoutId);
+                        try {
+                            if (!data || !data.pregrado || !data.posgrado) throw new Error("Datos no encontrados en Google Sheets.");
+                            db.pregrado = procesarDatos(data.pregrado);
+                            db.posgrado = procesarDatos(data.posgrado);
+                            
+                            overlay.style.display = 'none'; 
+                            document.getElementById('uploadStatus').innerHTML = "<span class='text-emerald-600 font-bold'>Conectado (En vivo a Google Sheets).</span>";
+                            
+                            actualizarMeses(); actualizarProgramas(); actualizarDashboard();
+                        } catch(err) {
+                            mostrarErrorLoader("Error al procesar: " + err.message);
+                        }
+                    })
+                    .withFailureHandler(function(error) {
+                        clearTimeout(timeoutId);
+                        mostrarErrorLoader(error.message);
+                    })
+                    .getDatos();
+                return;
+            } else {
+                // Modo navegador local (Fallback)
+                mostrarErrorLoader("No se detectó el entorno de Google Apps Script. Prueba usar la Demo.");
+            }
+        };
+
+        function mostrarErrorLoader(mensaje) {
+            document.getElementById('loadingSpinner').style.display = 'none';
+            document.getElementById('loadingTitle').innerHTML = `<span class="text-red-600">Aviso</span>`;
+            document.getElementById('loadingText').innerHTML = mensaje;
+            document.getElementById('closeErrorBtn').style.display = 'inline-block';
+        }
+
+        function ocultarLoader() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+            document.getElementById('uploadStatus').innerHTML = '<span class="text-red-600 font-bold">Modo Offline. Usando Demo o CSV.</span>';
+            restaurarDemo(); 
+        }
+
+        // --- 2. LOGICA DE DATOS ---
+        function procesarDatos(data) {
+            return data.map(item => {
+                item.perdidaConv = item.admitidos - item.admitidosMatri;
+                item.desercionNeta = item.noMatri - item.recuperados;
+                item.brechaReemplazo = item.admitidosMatri - item.egresados;
+                item.crecimientoNeto = (item.admitidosMatri + item.recuperados) - (item.noMatri + item.egresados);
+                item.tasaEfComercial = item.admitidos > 0 ? parseFloat(((item.admitidosMatri / item.admitidos) * 100).toFixed(1)) : 0;
+                
+                // NUEVO: Balance de Retención (Diferencia de Alumnos)
+                item.balanceRetencion = item.recuperados - item.noMatri;
+
+                item.tasaRenov = item.matDistancia > 0 ? parseFloat(((item.admitidosMatri / item.matDistancia) * 100).toFixed(1)) : 0;
+                item.propCierre = item.total > 0 ? parseFloat(((item.matPresencial / item.total) * 100).toFixed(1)) : 0;
+                item.tasaDesercion = item.total > 0 ? parseFloat(((item.noMatri / item.total) * 100).toFixed(1)) : 0;
+                return item;
+            });
+        }
+
+        function actualizarMeses() {
+            const nivel = document.getElementById('filtroNivel').value;
+            let mesesDisponibles = new Set();
+            if (nivel === 'institucional') {
+                db.pregrado.forEach(item => mesesDisponibles.add(item.mes));
+                db.posgrado.forEach(item => mesesDisponibles.add(item.mes));
+            } else {
+                db[nivel].forEach(item => mesesDisponibles.add(item.mes));
+            }
+            
+            const selectMes = document.getElementById('filtroMes');
+            const mesActual = selectMes.value; 
+            selectMes.innerHTML = '';
+            
+            const ordenMeses = { 'Enero':1, 'Febrero':2, 'Marzo':3, 'Abril':4, 'Mayo':5, 'Junio':6, 'Julio':7, 'Agosto':8, 'Septiembre':9, 'Octubre':10, 'Noviembre':11, 'Diciembre':12 };
+            let arrMeses = Array.from(mesesDisponibles).sort((a,b) => (ordenMeses[a] || 99) - (ordenMeses[b] || 99));
+
+            if(arrMeses.length === 0) return;
+
+            arrMeses.forEach(mes => {
+                const opt = document.createElement('option');
+                opt.value = mes; opt.textContent = mes;
+                selectMes.appendChild(opt);
+            });
+            
+            if (mesActual && mesesDisponibles.has(mesActual)) { selectMes.value = mesActual; } 
+            else if (arrMeses.length > 0) { selectMes.value = arrMeses[0]; }
+        }
+
+        function actualizarProgramas() {
+            const nivel = document.getElementById('filtroNivel').value;
+            const mes = document.getElementById('filtroMes').value;
+            const selectProg = document.getElementById('filtroPrograma');
+            
+            const programaActual = selectProg.value; 
+            selectProg.innerHTML = '';
+
+            if (nivel === 'institucional') {
+                const optGeneral = document.createElement('option');
+                optGeneral.value = "ALL"; optGeneral.textContent = "🌟 Total Institucional (Sede Completa)";
+                selectProg.appendChild(optGeneral);
+                selectProg.disabled = true;
+                return;
+            } else {
+                selectProg.disabled = false;
+            }
+            
+            const programasDisponibles = db[nivel].filter(item => item.mes === mes).map(item => item.programa);
+            if (programasDisponibles.length === 0) return;
+
+            const optGeneral = document.createElement('option');
+            optGeneral.value = "ALL"; optGeneral.textContent = "🌟 Resultados Generales (Consolidado)";
+            selectProg.appendChild(optGeneral);
+
+            programasDisponibles.forEach(prog => {
+                const opt = document.createElement('option');
+                opt.value = prog; opt.textContent = "↳ " + prog;
+                selectProg.appendChild(opt);
+            });
+            
+            if (programaActual && programasDisponibles.includes(programaActual)) { selectProg.value = programaActual; } 
+            else { selectProg.value = "ALL"; }
+        }
+
+        function aggregateData(nivel, mes) {
+            let registros = [];
+            if (nivel === 'institucional') {
+                registros = [...db.pregrado.filter(i => i.mes === mes), ...db.posgrado.filter(i => i.mes === mes)];
+            } else {
+                registros = db[nivel].filter(item => item.mes === mes);
+            }
+            if (registros.length === 0) return null;
+
+            let consolidado = {
+                programa: 'Resultados Generales (Consolidado)',
+                total: 0, crecimientoNeto: 0, admitidos: 0, admitidosMatri: 0,
+                noMatri: 0, recuperados: 0, egresados: 0, perdidaConv: 0,
+                matDistancia: 0, matPresencial: 0, desercionNeta: 0, brechaReemplazo: 0, balanceRetencion: 0, dosMeses: 0
+            };
+
+            registros.forEach(r => {
+                consolidado.total += r.total; consolidado.crecimientoNeto += r.crecimientoNeto;
+                consolidado.admitidos += r.admitidos; consolidado.admitidosMatri += r.admitidosMatri;
+                consolidado.noMatri += r.noMatri; consolidado.recuperados += r.recuperados;
+                consolidado.egresados += r.egresados; consolidado.perdidaConv += r.perdidaConv;
+                consolidado.matDistancia += (r.matDistancia || 0); consolidado.matPresencial += (r.matPresencial || 0);
+                consolidado.desercionNeta += r.desercionNeta; consolidado.brechaReemplazo += r.brechaReemplazo;
+                consolidado.dosMeses += (r.dosMeses || 0);
+            });
+
+            consolidado.tasaEfComercial = consolidado.admitidos > 0 ? parseFloat(((consolidado.admitidosMatri / consolidado.admitidos) * 100).toFixed(1)) : 0;
+            consolidado.balanceRetencion = consolidado.recuperados - consolidado.noMatri;
+            consolidado.tasaDesercion = consolidado.total > 0 ? parseFloat(((consolidado.noMatri / consolidado.total) * 100).toFixed(1)) : 0;
+            return consolidado;
+        }
+
+        function getTrendData(nivel, programaSel) {
+            const mesesList = Array.from(document.getElementById('filtroMes').options).map(o => o.value);
+            return mesesList.map(m => {
+                let d = (programaSel === 'ALL' || nivel === 'institucional') ? aggregateData(nivel, m) : db[nivel].find(item => item.mes === m && item.programa === programaSel);
+                return { 
+                    mes: m, total: d ? d.total : 0, crecimientoNeto: d ? d.crecimientoNeto : 0, tasaEfComercial: d ? d.tasaEfComercial : 0,
+                    captacion: d ? d.admitidosMatri : 0, desercion: d ? d.noMatri : 0, tasaDesercion: d ? d.tasaDesercion : 0,
+                    recuperados: d ? d.recuperados : 0
+                };
+            });
+        }
+
+        function actualizarDashboard() {
+            const nivel = document.getElementById('filtroNivel').value;
+            const mes = document.getElementById('filtroMes').value;
+            const programaSel = document.getElementById('filtroPrograma').value;
+
+            if (!programaSel || !mes) return;
+
+            let isGlobal = (programaSel === 'ALL' || nivel === 'institucional');
+            let datos = isGlobal ? aggregateData(nivel, mes) : db[nivel].find(item => item.mes === mes && item.programa === programaSel);
+            
+            if (!datos) return;
+            datosActualesGlobal = datos; 
+
+            document.getElementById('kpiTotal').textContent = datos.total.toLocaleString();
+            
+            const kpiCrec = document.getElementById('kpiCrecimiento');
+            kpiCrec.textContent = (datos.crecimientoNeto > 0 ? '+' : '') + datos.crecimientoNeto;
+            kpiCrec.className = `metric-value ${datos.crecimientoNeto > 0 ? 'positive' : (datos.crecimientoNeto < 0 ? 'negative' : 'neutral')}`;
+
+            const kpiEfe = document.getElementById('kpiEfectividad');
+            kpiEfe.textContent = datos.tasaEfComercial + '%';
+            kpiEfe.className = `metric-value ${datos.tasaEfComercial >= 70 ? 'positive' : (datos.tasaEfComercial < 50 ? 'negative' : 'neutral')}`;
+            document.getElementById('kpiEfeAbsoluto').textContent = `(${datos.admitidosMatri} alum.)`;
+
+            // ACTUALIZACIÓN DE RETENCIÓN AL NUEVO MODELO DE BALANCE
+            const kpiRet = document.getElementById('kpiRetencion');
+            kpiRet.textContent = (datos.balanceRetencion > 0 ? '+' : '') + datos.balanceRetencion;
+            kpiRet.className = `metric-value ${datos.balanceRetencion >= 0 ? 'positive' : 'negative'}`;
+            document.getElementById('kpiRetAbsoluto').textContent = `(Rec: ${datos.recuperados} | Fuga: ${datos.noMatri})`;
+
+            const kpiDesercion = document.getElementById('kpiDesercion');
+            kpiDesercion.textContent = datos.tasaDesercion + '%';
+            let limiteDesercion = (nivel === 'posgrado') ? 5 : 15;
+            kpiDesercion.className = `metric-value ${datos.tasaDesercion <= limiteDesercion ? 'positive' : 'negative'}`;
+            document.getElementById('kpiDesAbsoluto').textContent = `(${datos.noMatri} alum.)`;
+
+            generarDiagnostico(datos, isGlobal, nivel);
+            generarComparativo(datos, nivel, mes, isGlobal);
+
+            document.getElementById('cardComposicion').style.display = (nivel === 'pregrado' || nivel === 'institucional') ? 'block' : 'none';
+
+            renderCharts(datos, nivel);
+            renderTrendCharts(getTrendData(nivel, programaSel));
+            renderComparativeTrendCharts();
+            renderMatrizChart(nivel, mes);
+        }
+
+        // --- 3. FUNCIONES DE INTERFAZ Y GRÁFICOS RESTAURADAS ---
+
+        function generarDiagnostico(datos, isGlobal, nivel) {
+            let diag = isGlobal ? `<strong>Análisis Consolidado:</strong> ` : `<strong>Análisis de ${datos.programa}:</strong> `;
+            diag += datos.crecimientoNeto < 0 ? `<span class="text-red-600">Alerta de Contracción.</span> Se han perdido ${Math.abs(datos.crecimientoNeto)} alumnos en balance. ` : `<span class="text-green-600">Crecimiento Saludable.</span> Suma de ${datos.crecimientoNeto} alumnos. `;
+            
+            if (datos.balanceRetencion >= 0) { diag += `Excelente recuperación de inactivos (Balance positivo: +${datos.balanceRetencion}). `; } 
+            else { diag += `<span class="text-amber-600">Alta fuga sin recuperar (Balance negativo: ${datos.balanceRetencion}).</span> `; }
+
+            let limiteDesercion = (nivel === 'posgrado') ? 5 : 15;
+            if (datos.tasaDesercion <= limiteDesercion) {
+                diag += `La deserción mensual (${datos.tasaDesercion}%) está controlada según el estándar de la industria (${limiteDesercion}%).`;
+            } else {
+                diag += `<span class="text-red-600">Peligro: Deserción mensual (${datos.tasaDesercion}%) excede el límite del sector (${limiteDesercion}%).</span>`;
+            }
+            document.getElementById('textoDiagnostico').innerHTML = diag;
+        }
+
+        function generarComparativo(datosProg, nivel, mes, isGlobal) {
+            const panel = document.getElementById('panelComparativo');
+            if (isGlobal || nivel === 'institucional') {
+                panel.innerHTML = `<div class="col-span-1 md:col-span-3 p-5 bg-blue-50 text-blue-900 rounded-lg text-center border border-blue-200"><h4 class="font-bold mb-1">Vista Total Institucional / Global</h4><p class="text-sm">Estás viendo la suma total del nivel para el mes de ${mes}. Selecciona un programa en específico para comparar con la media.</p></div>`;
+                return;
+            }
+            const progNivel = db[nivel].filter(item => item.mes === mes);
+            const promEf = progNivel.reduce((a,c)=>a+c.admitidos,0) > 0 ? (progNivel.reduce((a,c)=>a+c.admitidosMatri,0)/progNivel.reduce((a,c)=>a+c.admitidos,0)*100).toFixed(1) : 0;
+            const promRet = progNivel.length > 0 ? (progNivel.reduce((a,c)=>a+c.balanceRetencion,0)/progNivel.length).toFixed(1) : 0;
+            const promCrec = (progNivel.reduce((a,c)=>a+c.crecimientoNeto,0) / progNivel.length).toFixed(1);
+
+            panel.innerHTML = `
+                <div class="p-4 bg-gray-50 rounded-lg flex flex-col justify-between"><div><div class="text-sm font-semibold text-gray-500 uppercase">Efectividad Ventas</div><div class="font-bold text-2xl text-gray-900 mt-1">${datosProg.tasaEfComercial}% <span class="text-xs text-gray-500 font-normal">vs ${promEf}%</span></div></div><div class="mt-2">${datosProg.tasaEfComercial >= promEf ? '<span class="badge-above">▲ Sobre Media</span>' : '<span class="badge-below">▼ Bajo Media</span>'}</div></div>
+                <div class="p-4 bg-gray-50 rounded-lg flex flex-col justify-between"><div><div class="text-sm font-semibold text-gray-500 uppercase">Balance Retención</div><div class="font-bold text-2xl text-gray-900 mt-1">${datosProg.balanceRetencion > 0 ? '+' : ''}${datosProg.balanceRetencion} <span class="text-xs text-gray-500 font-normal">vs ${promRet > 0 ? '+' : ''}${promRet}</span></div></div><div class="mt-2">${datosProg.balanceRetencion >= promRet ? '<span class="badge-above">▲ Sobre Media</span>' : '<span class="badge-below">▼ Bajo Media</span>'}</div></div>
+                <div class="p-4 bg-gray-50 rounded-lg flex flex-col justify-between"><div><div class="text-sm font-semibold text-gray-500 uppercase">Crecimiento Neto</div><div class="font-bold text-2xl ${datosProg.crecimientoNeto >= 0 ? 'text-green-600' : 'text-red-600'} mt-1">${datosProg.crecimientoNeto > 0 ? '+' : ''}${datosProg.crecimientoNeto} <span class="text-xs text-gray-500 font-normal">vs ${promCrec>0?'+':''}${promCrec}</span></div></div><div class="mt-2">${datosProg.crecimientoNeto >= promCrec ? '<span class="badge-above">Mejor Balance</span>' : '<span class="badge-below">Peor Balance</span>'}</div></div>
+            `;
+        }
+
+        function renderCharts(datos, nivel) {
+            Chart.defaults.font.family = 'Inter, sans-serif'; Chart.defaults.color = '#6b7280';
+            
+            if(charts['chartEmbudo']) charts['chartEmbudo'].destroy();
+            charts['chartEmbudo'] = new Chart(document.getElementById('chartEmbudo').getContext('2d'), { type: 'bar', data: { labels: ['Admitidos', 'Pagaron', 'Pérdida (No pagaron)'], datasets: [{ data: [datos.admitidos, datos.admitidosMatri, datos.perdidaConv], backgroundColor: ['#3b82f6', '#10b981', '#ef4444'], borderRadius: 6 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+
+            if(charts['chartFlujo']) charts['chartFlujo'].destroy();
+            charts['chartFlujo'] = new Chart(document.getElementById('chartFlujo').getContext('2d'), { type: 'bar', data: { labels: ['Entradas', 'Salidas'], datasets: [{ label: 'Nuevos', data: [datos.admitidosMatri, 0], backgroundColor: '#34d399' }, { label: 'Recuperados', data: [datos.recuperados, 0], backgroundColor: '#059669' }, { label: 'Egresados', data: [0, datos.egresados], backgroundColor: '#f87171' }, { label: 'No Matricul.', data: [0, datos.noMatri], backgroundColor: '#dc2626' }] }, options: { responsive: true, maintainAspectRatio: false, scales: { x: { stacked: true }, y: { stacked: true } } } });
+
+            if(nivel === 'pregrado' || nivel === 'institucional'){
+                if(charts['chartModalidad']) charts['chartModalidad'].destroy();
+                charts['chartModalidad'] = new Chart(document.getElementById('chartModalidad').getContext('2d'), { type: 'doughnut', data: { labels: ['Distancia', 'Presencial (Cierre)'], datasets: [{ data: [datos.matDistancia, datos.matPresencial], backgroundColor: ['#3b82f6', '#fbbf24'] }] }, options: { responsive: true, maintainAspectRatio: false, cutout: '65%', plugins: { legend: { position: 'bottom' } } } });
+            }
+
+            if(charts['chartReemplazo']) charts['chartReemplazo'].destroy();
+            charts['chartReemplazo'] = new Chart(document.getElementById('chartReemplazo').getContext('2d'), { type: 'bar', data: { labels: ['Ingresos Nuevos', 'Egresados (Salen)'], datasets: [{ data: [datos.admitidosMatri, datos.egresados], backgroundColor: ['#10b981', '#6366f1'], borderRadius: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+
+            if(charts['chartAdqVsAbandono']) charts['chartAdqVsAbandono'].destroy();
+            charts['chartAdqVsAbandono'] = new Chart(document.getElementById('chartAdqVsAbandono').getContext('2d'), { 
+                type: 'bar', 
+                data: { labels: ['Captación (Nuevos)', 'Deserción Bruta (No Matríc.)'], datasets: [{ data: [datos.admitidosMatri, datos.noMatri], backgroundColor: ['#10b981', '#ef4444'], borderRadius: 6 }] }, 
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } 
+            });
+        }
+
+        function renderTrendCharts(trendData) {
+            const labels = trendData.map(d => d.mes);
+            const dataCrecimiento = trendData.map(d => d.crecimientoNeto);
+            const dataEfectividad = trendData.map(d => d.tasaEfComercial);
+            const dataCaptacion = trendData.map(d => d.captacion);
+            const dataDesercion = trendData.map(d => d.desercion);
+            const dataTasaDesercion = trendData.map(d => d.tasaDesercion);
+            const dataTotal = trendData.map(d => d.total);
+            const dataRecuperados = trendData.map(d => d.recuperados);
+
+            Chart.defaults.color = '#4b5563';
+            Chart.defaults.font.family = "'Inter', sans-serif";
+
+            // Gráfico de Total Matriculados, Captación, Deserción y Recuperados
+            if(charts['chartTrendTotal']) charts['chartTrendTotal'].destroy();
+            charts['chartTrendTotal'] = new Chart(document.getElementById('chartTrendTotal').getContext('2d'), {
+                type: 'line', 
+                data: { 
+                    labels: labels, 
+                    datasets: [
+                        { label: 'Total Matriculados', data: dataTotal, borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 3, pointRadius: 4, tension: 0.3 },
+                        { label: 'Nuevos Admitidos', data: dataCaptacion, borderColor: '#10b981', backgroundColor: '#10b981', borderWidth: 2, pointRadius: 3, tension: 0.3 },
+                        { label: 'Recuperados', data: dataRecuperados, borderColor: '#eab308', backgroundColor: '#eab308', borderWidth: 2, pointRadius: 3, tension: 0.3 },
+                        { label: 'Desertores', data: dataDesercion, borderColor: '#ef4444', backgroundColor: '#ef4444', borderWidth: 2, pointRadius: 3, tension: 0.3 }
+                    ] 
+                },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, interaction: { mode: 'index', intersect: false } }
+            });
+
+            if(charts['chartTrendCrecimiento']) charts['chartTrendCrecimiento'].destroy();
+            charts['chartTrendCrecimiento'] = new Chart(document.getElementById('chartTrendCrecimiento').getContext('2d'), {
+                type: 'line', data: { labels: labels, datasets: [{ label: 'Crecimiento Neto', data: dataCrecimiento, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, pointBackgroundColor: '#10b981', tension: 0.3, fill: true }] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+            });
+
+            if(charts['chartTrendEfectividad']) charts['chartTrendEfectividad'].destroy();
+            charts['chartTrendEfectividad'] = new Chart(document.getElementById('chartTrendEfectividad').getContext('2d'), {
+                type: 'line', data: { labels: labels, datasets: [{ label: 'Efectividad Comercial (%)', data: dataEfectividad, borderColor: '#8b5cf6', backgroundColor: 'rgba(139, 92, 246, 0.1)', borderWidth: 2, pointBackgroundColor: '#8b5cf6', tension: 0.3, fill: true }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, max: 100 } }, plugins: { legend: { display: false } } }
+            });
+
+            if(charts['chartTrendDesercion']) charts['chartTrendDesercion'].destroy();
+            const nivelFiltro = document.getElementById('filtroNivel').value;
+            const benchmarkVal = (nivelFiltro === 'posgrado') ? 5 : 15;
+            const benchmarkPlugin = {
+                id: 'benchmarkLine',
+                beforeDraw: chart => {
+                    const { ctx, chartArea: { top, bottom, left, right }, scales: { x, y } } = chart;
+                    const yNormal = y.getPixelForValue(benchmarkVal); 
+                    ctx.save();
+                    if(yNormal >= top && yNormal <= bottom) {
+                        ctx.beginPath(); ctx.moveTo(left, yNormal); ctx.lineTo(right, yNormal);
+                        ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)'; ctx.setLineDash([5, 5]); ctx.stroke();
+                        ctx.fillStyle = 'rgba(239, 68, 68, 1)'; ctx.font = '10px sans-serif'; 
+                        ctx.fillText(`Límite Máximo (${benchmarkVal}%)`, left + 5, yNormal - 5);
+                    }
+                    ctx.restore();
+                }
+            };
+            charts['chartTrendDesercion'] = new Chart(document.getElementById('chartTrendDesercion').getContext('2d'), {
+                type: 'bar', data: { labels: labels, datasets: [{ label: 'Tasa Deserción Mensual (%)', data: dataTasaDesercion, backgroundColor: 'rgba(239, 68, 68, 0.7)', borderColor: '#ef4444', borderWidth: 1, borderRadius: 4 }] },
+                plugins: [benchmarkPlugin], options: { responsive: true, maintainAspectRatio: false, scales: { y: { min: 0, suggestedMax: Math.max(20, Math.max(...dataTasaDesercion) + 5) } }, plugins: { legend: { display: false } } }
+            });
+
+            if(charts['chartTrendAdqVsAbandono']) charts['chartTrendAdqVsAbandono'].destroy();
+            charts['chartTrendAdqVsAbandono'] = new Chart(document.getElementById('chartTrendAdqVsAbandono').getContext('2d'), {
+                type: 'line', data: { labels: labels, datasets: [ { label: 'Captación (Nuevos)', data: dataCaptacion, borderColor: '#10b981', backgroundColor: 'rgba(16, 185, 129, 0.1)', borderWidth: 2, pointBackgroundColor: '#10b981', tension: 0.3, fill: true }, { label: 'Deserción (No Matríc.)', data: dataDesercion, borderColor: '#ef4444', backgroundColor: 'rgba(239, 68, 68, 0.1)', borderWidth: 2, pointBackgroundColor: '#ef4444', tension: 0.3, fill: true } ] },
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } }, interaction: { mode: 'index', intersect: false } }
+            });
+        }
+
+        function renderMatrizChart(nivel, mes) {
+            let dataArr = [];
+            if (nivel === 'institucional') { dataArr = [...db.pregrado.filter(i => i.mes === mes), ...db.posgrado.filter(i => i.mes === mes)]; } 
+            else { dataArr = db[nivel].filter(i => i.mes === mes); }
+
+            const datasets = dataArr.map((item, index) => {
+                const color = palette[index % palette.length];
+                const radio = Math.max(8, Math.sqrt(item.total) * 1.5); 
+                // NUEVO: 'y' mapea el balance absoluto, ya no el porcentaje confuso
+                return { label: item.programa, data: [{ x: item.tasaEfComercial, y: item.balanceRetencion, r: radio, total: item.total }], backgroundColor: color + '80', borderColor: color, borderWidth: 2 };
+            });
+
+            const quadrantPlugin = {
+                id: 'quadrant',
+                beforeDraw: (chart) => {
+                    const { ctx, chartArea: { top, bottom, left, right }, scales: { x, y } } = chart;
+                    const xCenter = x.getPixelForValue(70); 
+                    const yCenter = y.getPixelForValue(0); // Ahora el umbral de retención es 0 (balance neutro)
+                    
+                    ctx.save();
+                    
+                    // Solo pintar el cuadro si las coordenadas están dentro del área visible
+                    if(xCenter >= left && xCenter <= right && yCenter >= top && yCenter <= bottom) {
+                        ctx.fillStyle = 'rgba(16, 185, 129, 0.08)'; 
+                        ctx.fillRect(xCenter, top, right - xCenter, yCenter - top);
+                        ctx.fillStyle = 'rgba(16, 185, 129, 0.6)'; ctx.font = 'bold 16px sans-serif'; 
+                        ctx.fillText('ZONA BUENA', xCenter + 15, top + 25);
+                    }
+                    
+                    ctx.strokeStyle = 'rgba(156, 163, 175, 0.8)'; ctx.lineWidth = 2; ctx.setLineDash([5, 5]);
+                    
+                    // Línea vertical (Efectividad > 70%)
+                    if(xCenter >= left && xCenter <= right) {
+                        ctx.beginPath(); ctx.moveTo(xCenter, top); ctx.lineTo(xCenter, bottom); ctx.stroke();
+                        ctx.fillStyle = 'rgba(16, 185, 129, 0.9)'; ctx.font = 'bold 11px sans-serif'; 
+                        ctx.fillText('Bueno > 70%', xCenter + 5, bottom - 5);
+                    }
+                    
+                    // Línea Horizontal (Balance > 0)
+                    if(yCenter >= top && yCenter <= bottom) {
+                        ctx.beginPath(); ctx.moveTo(left, yCenter); ctx.lineTo(right, yCenter); ctx.stroke();
+                        ctx.fillStyle = 'rgba(16, 185, 129, 0.9)'; ctx.font = 'bold 11px sans-serif'; 
+                        ctx.fillText('Balance > 0', left + 5, yCenter - 8);
+                    }
+                    ctx.restore();
+                }
+            };
+
+            if(charts['chartMatriz']) charts['chartMatriz'].destroy();
+            charts['chartMatriz'] = new Chart(document.getElementById('chartMatriz').getContext('2d'), {
+                type: 'bubble', data: { datasets: datasets }, plugins: [quadrantPlugin], 
+                options: { 
+                    responsive: true, 
+                    maintainAspectRatio: false, 
+                    plugins: { 
+                        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }, 
+                        tooltip: { 
+                            callbacks: { 
+                                label: function(context) { 
+                                    const d = context.raw; 
+                                    return `${context.dataset.label}: Efectividad (X): ${d.x}% | Balance Retención (Y): ${d.y} alum. | Población: ${d.total}`; 
+                                } 
+                            } 
+                        } 
+                    }, 
+                    scales: { 
+                        x: { title: { display: true, text: 'Tasa de Efectividad Comercial (Ventas) %', font: { weight: 'bold' } }, min: 0, max: 100 }, 
+                        y: { title: { display: true, text: 'Balance de Retención (Recuperados - Fugas)', font: { weight: 'bold' } }, suggestedMin: -10, suggestedMax: 10 } // Garantiza que la línea 0 se vea siempre
+                    } 
+                } 
+            });
+        }
+
+        function getComparativeTrendData(nivel) {
+            const ordenMeses = { 'Enero':1, 'Febrero':2, 'Marzo':3, 'Abril':4, 'Mayo':5, 'Junio':6, 'Julio':7, 'Agosto':8, 'Septiembre':9, 'Octubre':10, 'Noviembre':11, 'Diciembre':12 };
+            let mesesDisponibles = new Set();
+            
+            if (nivel === 'institucional') {
+                db.pregrado.forEach(item => mesesDisponibles.add(item.mes)); db.posgrado.forEach(item => mesesDisponibles.add(item.mes));
+                let arrMeses = Array.from(mesesDisponibles).sort((a,b) => (ordenMeses[a] || 99) - (ordenMeses[b] || 99));
+                return { type: 'institucional', labels: arrMeses, data: arrMeses.map(m => ({ mes: m, pregrado: aggregateData('pregrado', m) || { total:0, crecimientoNeto:0, tasaEfComercial:0, balanceRetencion:0 }, posgrado: aggregateData('posgrado', m) || { total:0, crecimientoNeto:0, tasaEfComercial:0, balanceRetencion:0 } })) };
+            } else {
+                db[nivel].forEach(item => mesesDisponibles.add(item.mes));
+                let arrMeses = Array.from(mesesDisponibles).sort((a,b) => (ordenMeses[a] || 99) - (ordenMeses[b] || 99));
+                let programas = Array.from(new Set(db[nivel].map(item => item.programa)));
+                return { type: 'programas', labels: arrMeses, programas: programas, data: arrMeses.map(m => { let progData = {}; programas.forEach(p => { let record = db[nivel].find(item => item.mes === m && item.programa === p); progData[p] = record || { total:0, crecimientoNeto:0, tasaEfComercial:0, balanceRetencion:0 }; }); return { mes: m, programas: progData }; }) };
+            }
+        }
+
+        function renderComparativeTrendCharts() {
+            const nivel = document.getElementById('filtroNivel').value;
+            const trendInfo = getComparativeTrendData(nivel);
+            const labels = trendInfo.labels;
+            
+            const createLineChart = (id, datasets) => {
+                if(charts[id]) charts[id].destroy();
+                charts[id] = new Chart(document.getElementById(id).getContext('2d'), { type: 'line', data: { labels: labels, datasets: datasets }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } } }, interaction: { mode: 'index', intersect: false } } });
+            };
+
+            if (trendInfo.type === 'institucional') {
+                const dataPre = trendInfo.data;
+                const dsTotal = [ { label: 'Pregrado', data: dataPre.map(d => d.pregrado.total), borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.3 }, { label: 'Posgrado', data: dataPre.map(d => d.posgrado.total), borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.3 } ];
+                const dsCrec = [ { label: 'Pregrado', data: dataPre.map(d => d.pregrado.crecimientoNeto), borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.3 }, { label: 'Posgrado', data: dataPre.map(d => d.posgrado.crecimientoNeto), borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.3 } ];
+                const dsEfe = [ { label: 'Pregrado', data: dataPre.map(d => d.pregrado.tasaEfComercial), borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.3 }, { label: 'Posgrado', data: dataPre.map(d => d.posgrado.tasaEfComercial), borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.3 } ];
+                const dsRet = [ { label: 'Pregrado', data: dataPre.map(d => d.pregrado.balanceRetencion), borderColor: '#3b82f6', backgroundColor: '#3b82f6', borderWidth: 2, tension: 0.3 }, { label: 'Posgrado', data: dataPre.map(d => d.posgrado.balanceRetencion), borderColor: '#f59e0b', backgroundColor: '#f59e0b', borderWidth: 2, tension: 0.3 } ];
+                
+                document.getElementById('tituloComparativa').innerHTML = `<svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg> Tendencias Comparativas: Pregrado vs Posgrado`;
+                createLineChart('chartCompTotal', dsTotal); createLineChart('chartCompCrec', dsCrec); createLineChart('chartCompEfe', dsEfe); createLineChart('chartCompRet', dsRet);
+            } else {
+                const dsTotal = []; const dsCrec = []; const dsEfe = []; const dsRet = [];
+                trendInfo.programas.forEach((prog, index) => {
+                    const color = palette[index % palette.length];
+                    dsTotal.push({ label: prog, data: trendInfo.data.map(d => d.programas[prog].total), borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.3 });
+                    dsCrec.push({ label: prog, data: trendInfo.data.map(d => d.programas[prog].crecimientoNeto), borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.3 });
+                    dsEfe.push({ label: prog, data: trendInfo.data.map(d => d.programas[prog].tasaEfComercial), borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.3 });
+                    dsRet.push({ label: prog, data: trendInfo.data.map(d => d.programas[prog].balanceRetencion), borderColor: color, backgroundColor: color, borderWidth: 2, tension: 0.3 });
+                });
+                const tituloNivel = nivel === 'pregrado' ? 'Carreras de Pregrado' : 'Maestrías de Posgrado';
+                document.getElementById('tituloComparativa').innerHTML = `<svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg> Tendencias Comparativas entre ${tituloNivel}`;
+                createLineChart('chartCompTotal', dsTotal); createLineChart('chartCompCrec', dsCrec); createLineChart('chartCompEfe', dsEfe); createLineChart('chartCompRet', dsRet);
+            }
+        }
+
+        // --- 4. LÓGICA DE MODALES (Kpis y Gráficos) ---
+        function abrirModalKPI(tipo) {
+            if (!datosActualesGlobal) return;
+            const d = datosActualesGlobal;
+            
+            const modal = document.getElementById('kpiModal');
+            const mTitle = document.getElementById('modalTitle');
+            const mValue = document.getElementById('modalCurrentValue');
+            const mFormula = document.getElementById('modalFormula');
+            const mGenInterp = document.getElementById('modalGeneralInterpretation');
+            const mSpecAn = document.getElementById('modalSpecificAnalysis');
+            const mRec = document.getElementById('modalRecommendations');
+            const mHeader = document.getElementById('modalHeader');
+
+            mHeader.className = "p-5 border-b flex justify-between items-center text-white";
+
+            if (tipo === 'total') {
+                mHeader.classList.add('bg-blue-600');
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path></svg> Total de Matriculados`;
+                mValue.textContent = d.total.toLocaleString();
+                mValue.className = "text-4xl font-bold text-blue-600 leading-none mt-1";
+                mFormula.textContent = "Suma aritmética: Matrícula Regular a Distancia + Matrícula Presencial";
+                mGenInterp.textContent = "Es el volumen absoluto de tu población activa. Mide la envergadura del programa y representa la base actual generadora de ingresos y obligaciones académicas.";
+                mSpecAn.innerHTML = `Actualmente tu programa cuenta con <strong>${d.total.toLocaleString()}</strong> alumnos activos. Estás gestionando una base compuesta por ${d.matDistancia} alumnos a distancia y ${d.matPresencial} alumnos en planes presenciales (en cierre).`;
+                mRec.innerHTML = "<strong>Mantén la fidelización:</strong> Esta base ya está ganada. Enfoca recursos de servicio al estudiante para garantizar que sigan renovando matrícula en los ciclos venideros. Vigila de cerca a la porción de estudiantes presenciales para acompañar su titulación.";
+            
+            } else if (tipo === 'crecimiento') {
+                mHeader.classList.add('bg-emerald-600');
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg> Crecimiento Neto Estudiantil`;
+                mValue.textContent = (d.crecimientoNeto > 0 ? '+' : '') + d.crecimientoNeto;
+                mValue.className = `text-4xl font-bold leading-none mt-1 ${d.crecimientoNeto >= 0 ? 'text-emerald-600' : 'text-red-600'}`;
+                mFormula.textContent = "(Admitidos Matriculados + Recuperados) - (No matriculados + Egresados)";
+                mGenInterp.textContent = "Representa el balance final entre todo lo que entró a la universidad (ventas y reinsertados) menos todo lo que salió (deserción bruta y graduados). Es el pulso vital de crecimiento institucional.";
+                
+                if (d.crecimientoNeto > 0) {
+                    mSpecAn.innerHTML = `El indicador es <span class="text-emerald-600 font-bold">Positivo (+${d.crecimientoNeto})</span>. Significa que, a pesar de las salidas naturales y abandonos, tu programa logró crecer estructuralmente inyectando más alumnos de los que perdió.`;
+                    mRec.innerHTML = "<strong>Asegura la capacidad operativa:</strong> El crecimiento constante demanda más docentes, infraestructura virtual y soporte. Mantén la inercia comercial, pero verifica la calidad del servicio para esta nueva cantidad de usuarios.";
+                } else if (d.crecimientoNeto < 0) {
+                    mSpecAn.innerHTML = `El indicador es <span class="text-red-600 font-bold">Negativo (${d.crecimientoNeto})</span>. Tu población total se ha encogido. Las ventas y recuperaciones no fueron suficientes para cubrir la fuga y el egreso natural.`;
+                    mRec.innerHTML = "<strong>¡Alerta Estratégica!</strong> Revisa con urgencia si el problema es una baja captación de nuevos, o una deserción excesiva. Debes implementar estrategias de fidelización para frenar salidas y replantear el presupuesto publicitario.";
+                } else {
+                    mSpecAn.innerHTML = `El indicador es <span class="text-gray-600 font-bold">Cero (0)</span>. Has quedado exactamente igual, reemplazando a cada alumno que salió con uno nuevo.`;
+                    mRec.innerHTML = "<strong>Romper el estancamiento:</strong> Analiza qué lado de la balanza te cuesta más (atraer o retener) y focaliza esfuerzos allí para volver a la senda de crecimiento.";
+                }
+
+            } else if (tipo === 'efectividad') {
+                mHeader.classList.add('bg-purple-600');
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Tasa de Efectividad Comercial`;
+                mValue.innerHTML = `${d.tasaEfComercial}% <span class="text-xl text-gray-500 font-medium ml-2">(${d.admitidosMatri} alum.)</span>`;
+                mValue.className = `text-4xl font-bold leading-none mt-1 ${d.tasaEfComercial >= 75 ? 'text-purple-600' : (d.tasaEfComercial < 60 ? 'text-red-600' : 'text-amber-500')}`;
+                mFormula.textContent = "(Admitidos Matriculados / Admitidos Totales) * 100";
+                mGenInterp.textContent = "Evalúa la gestión del equipo de ventas. Determina cuántos prospectos viables (que ya demostraron interés y pasaron admisión) realmente concretan el pago de matrícula. Mide la 'fuga del embudo'.";
+                
+                if (d.tasaEfComercial >= 80) {
+                    mSpecAn.innerHTML = `¡Excelente ratio de conversión! Cerraste el <strong>${d.tasaEfComercial}%</strong> de tus admitidos. Tu equipo de ventas está capitalizando al máximo los leads generados por marketing.`;
+                    mRec.innerHTML = "<strong>Escalar presupuesto publicitario:</strong> Dado que tu proceso de cierre es altamente efectivo, cada sol invertido en conseguir nuevos postulantes es sumamente rentable. Mantén el esquema actual de seguimiento comercial.";
+                } else if (d.tasaEfComercial >= 60) {
+                    mSpecAn.innerHTML = `Estás convirtiendo al <strong>${d.tasaEfComercial}%</strong> de los postulantes viables. Es un rendimiento promedio. Hay un ${100 - d.tasaEfComercial}% (${d.perdidaConv} personas) que se caen a último minuto.`;
+                    mRec.innerHTML = "<strong>Optimizar último paso:</strong> Analiza si el proceso de pago es engorroso o si faltan opciones de financiamiento. Refuerza las llamadas de seguimiento en las 48h posteriores a la admisión.";
+                } else {
+                    mSpecAn.innerHTML = `Tienes una <span class="text-red-600 font-bold">grave fuga en el embudo (${d.tasaEfComercial}%)</span>. Estás perdiendo a la mayoría de las personas que ya habían sido admitidas. La fuga exacta es de ${d.perdidaConv} alumnos.`;
+                    mRec.innerHTML = "<strong>Auditoría comercial urgente:</strong> Marketing está haciendo su trabajo trayendo prospectos, pero ventas no logra el cierre. Implementa opciones de pago fraccionado, revisa los guiones de los asesores y acelera los tiempos de atención.";
+                }
+
+            } else if (tipo === 'retencion') {
+                mHeader.classList.add('bg-amber-500');
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg> Balance de Retención`;
+                mValue.innerHTML = `${(d.balanceRetencion > 0 ? '+' : '')}${d.balanceRetencion} <span class="text-xl text-gray-500 font-medium ml-2">alumnos en diferencia</span>`;
+                mValue.className = `text-4xl font-bold leading-none mt-1 ${d.balanceRetencion >= 0 ? 'text-emerald-500' : 'text-red-500'}`;
+                mFormula.textContent = "Recuperados - No Matriculados (Abandono Bruto)";
+                
+                mGenInterp.innerHTML = "Mide el saldo neto de tu gestión de fidelización. Compara en números reales absolutos si lograste reincorporar a más estudiantes de los que el programa perdió operativamente en el mes actual.<br><br>" +
+                "<span class='text-blue-800 font-bold'>💡 Parámetros de Evaluación:</span><br>" +
+                "• <strong class='text-red-600'>Negativo (Pérdida):</strong> Tu programa se encoge por fuga. Pierdes a más alumnos de los que el equipo logra rescatar.<br>" +
+                "• <strong class='text-emerald-600'>Positivo (Ganancia):</strong> Crecimiento orgánico real. Rescatas a todas tus fugas MÁS alumnos inactivos de periodos anteriores.";
+                
+                if (d.balanceRetencion >= 0) {
+                    mSpecAn.innerHTML = `Tu balance es <strong class="text-emerald-600">Positivo (+${d.balanceRetencion})</strong>. Tienes crecimiento orgánico; lograste recuperar <strong>${d.recuperados}</strong> alumnos, superando las <strong>${d.noMatri}</strong> bajas del periodo.`;
+                    mRec.innerHTML = "<strong>Mantener campañas de reactivación:</strong> El equipo de retención es un pilar financiero del programa actualmente. Sigue minando tu base de datos histórica de inactivos para ofrecerles reincorporación sin penalidades.";
+                } else {
+                    mSpecAn.innerHTML = `Tu balance de retención es <strong class="text-red-600">Negativo (${d.balanceRetencion})</strong>. A pesar de recuperar <strong>${d.recuperados}</strong> alumnos, esto no fue suficiente para cubrir las <strong>${d.noMatri}</strong> fugas.`;
+                    mRec.innerHTML = "<strong>Intervención temprana:</strong> Llama a los alumnos en cuanto falten a clases o no paguen la primera boleta, no esperes al cierre de matrícula. Considera ofrecer refinanciamientos o cambios temporales a menor carga académica.";
+                }
+            } else if (tipo === 'desercion') {
+                const nivelStr = document.getElementById('filtroNivel').value;
+                const limite = (nivelStr === 'posgrado') ? 5 : 15;
+                mHeader.classList.add('bg-red-500');
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Tasa de Deserción Mensual`;
+                mValue.innerHTML = `${d.tasaDesercion}% <span class="text-xl text-gray-500 font-medium ml-2">(${d.noMatri} alum.)</span>`;
+                mValue.className = `text-4xl font-bold leading-none mt-1 ${d.tasaDesercion <= limite ? 'text-emerald-500' : 'text-red-600'}`;
+                mFormula.textContent = "(No Matriculados / Total de Alumnos Activos) * 100";
+                mGenInterp.innerHTML = "Mide el ritmo al que la base de estudiantes se encoge debido al abandono.<br><br>" +
+                "<span class='text-blue-800 font-bold'>💡 Benchmark (MINEDU):</span> Es normal una deserción mensual fisiológica de hasta <strong>5% en Posgrado</strong> y <strong>15% en Pregrado</strong>.";
+                
+                if (d.tasaDesercion <= limite) {
+                    mSpecAn.innerHTML = `Tu tasa de deserción es <strong class="text-emerald-600">Saludable (${d.tasaDesercion}%)</strong>. Te mantienes por debajo del umbral de riesgo del ${limite}% para tu nivel académico.`;
+                    mRec.innerHTML = "<strong>Mantener estrategias:</strong> El programa retiene bien. Monitorea cambios de tendencia estacional.";
+                } else {
+                    mSpecAn.innerHTML = `Tu tasa de deserción está <strong class="text-red-600">En Peligro (${d.tasaDesercion}%)</strong>. Superas el umbral normal del ${limite}%, lo que indica una fuga atípica de alumnos activos.`;
+                    mRec.innerHTML = "<strong>Activación inmediata:</strong> Diagnostica las causas principales (económicas, académicas o técnicas) e interviene antes del próximo periodo de cobro. Ejecuta encuestas de salida.";
+                }
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function cerrarModal() {
+            document.getElementById('kpiModal').classList.add('hidden');
+        }
+
+        function abrirModalGrafico(tipo) {
+            if (!datosActualesGlobal) return;
+            const d = datosActualesGlobal;
+            
+            const modal = document.getElementById('chartModal');
+            const mTitle = document.getElementById('cModalTitle');
+            const mHeader = document.getElementById('cModalHeader');
+            
+            const eCalc = document.getElementById('cModalCalculo');
+            const eImp = document.getElementById('cModalImportancia');
+            const eInt = document.getElementById('cModalInterpretacion');
+            const eApl = document.getElementById('cModalAplicacion');
+            const eAfe = document.getElementById('cModalAfecta');
+            const eRec = document.getElementById('cModalRecomendaciones');
+
+            mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-blue-600";
+
+            if (tipo === 'embudo') {
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z"></path></svg> Embudo de Captación Comercial - Efectividad Comercial`;
+                eCalc.textContent = "Admitidos Totales - Matriculados Confirmados = Pérdida (Fuga)";
+                eImp.innerHTML = "Mide la <strong>eficiencia del proceso final de ventas</strong>. Identifica cuántos prospectos viables económica y académicamente se pierden en el último paso antes de ser alumnos formales.";
+                eInt.innerHTML = "Un volumen alto en la métrica de 'Pérdida' evidencia fricciones operativas. Idealmente, la barra verde (pagaron) debe ser casi del mismo tamaño que la azul (admitidos).";
+                eApl.innerHTML = `De <strong>${d.admitidos} admitidos</strong>, lograron concretar el pago <strong>${d.admitidosMatri}</strong>. Tienes una fuga operativa de <strong>${d.perdidaConv} prospectos</strong> en esta etapa del proceso de admisión.`;
+                eAfe.innerHTML = "Afecta directamente el Retorno de Inversión (ROI) de marketing. Todo el dinero invertido en atraer prospectos se desperdicia si no logran pagar, mermando los ingresos proyectados del ciclo.";
+                eRec.innerHTML = "Auditar fricciones tecnológicas en las pasarelas de pago. Implementar campañas de 'retargeting' automatizado y llamadas de rescate por parte de asesores en las primeras 24 horas tras la admisión académica.";
+            } 
+            else if (tipo === 'flujo') {
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4"></path></svg> Dinámica de Flujo: Entradas vs Salidas - Crecimiento Neto`;
+                eCalc.textContent = "Suma de Entradas (Nuevos + Recuperados) VS Suma de Salidas (Egresados + Deserción Bruta)";
+                eImp.innerHTML = "Otorga una <strong>vista macroscópica de la dinámica poblacional</strong> del programa. Permite visualizar de forma cruda si el equipo comercial e institucional logra superar el ritmo de fuga natural e inactividad.";
+                eInt.innerHTML = "Las barras verdes superando a las rojas evidencian una franca expansión institucional. Si las barras rojas son más altas, el programa está perdiendo densidad poblacional aceleradamente.";
+                eApl.innerHTML = `El programa registra <strong>${d.admitidosMatri + d.recuperados} entradas</strong> en total y <strong>${d.egresados + d.noMatri} salidas</strong> reportadas en este periodo. Esto genera un diferencial o crecimiento neto de ${d.crecimientoNeto} estudiantes activos.`;
+                eAfe.innerHTML = "Un flujo negativo prolongado debilita la escala operativa de la universidad, desploma los ingresos consolidados por pensiones y compromete la viabilidad presupuestaria de toda la sede.";
+                eRec.innerHTML = "Si predominan las salidas: urgencia máxima en campañas preventivas de retención temprana en aulas. Si predominan las entradas: prever ampliación de infraestructura virtual, contrataciones docentes y servicio al alumno.";
+            }
+            else if (tipo === 'modalidad') {
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 3.055A9.001 9.001 0 1020.945 13H11V3.055z"></path></svg> Composición de Matrícula`;
+                eCalc.textContent = "(Matrícula Distancia / Matrícula Total) VS (Matrícula Presencial / Matrícula Total)";
+                eImp.innerHTML = "Mapea la <strong>transición estratégica del modelo de enseñanza</strong>. Alerta sobre el grado de dependencia financiera que aún se tiene sobre los planes antiguos presenciales 'en fase de cierre'.";
+                eInt.innerHTML = "Identifica qué proporción del alumnado activo no tendrá un 'reemplazo natural', puesto que el programa en su formato presencial ya no admite ingresantes de primer ciclo.";
+                eApl.innerHTML = `Actualmente gestionas una cartera remanente de <strong>${d.matPresencial} alumnos presenciales</strong>. Esta porción está en estricta cuenta regresiva; al egresar, dejará un vacío directo que deberás suplir incrementando tus <strong>${d.matDistancia} alumnos a distancia</strong>.`;
+                eAfe.innerHTML = "Existe un alto riesgo de insolvencia estructural a mediano plazo si no se logra compensar la futura salida masiva de alumnos presenciales con un volumen exponencial de venta 100% online.";
+                eRec.innerHTML = "Proyectar cuotas de admisión a distancia superiores al promedio histórico, calculando matemáticamente cuántos alumnos virtuales nuevos se necesitan para cubrir exactamente el hueco de la promoción presencial que egresará cada año.";
+            }
+            else if (tipo === 'reemplazo') {
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm14 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg> Brecha de Reemplazo`;
+                eCalc.textContent = "Ingresos Nuevos (Admitidos Matriculados) - Salidas Definitivas por Graduación (Egresados)";
+                eImp.innerHTML = "Actúa como indicador de <strong>'Sostenibilidad Generacional'</strong>. Evalúa estricta y únicamente si la tracción de ventas del periodo logra subsanar orgánicamente las salidas de alumnos titulados.";
+                eInt.innerHTML = "Una brecha positiva (+) significa renovación generacional saludable (entran más de los que se gradúan). Una brecha negativa (-) evidencia que el ritmo comercial no tapa el hueco de graduación.";
+                eApl.innerHTML = `Tu equipo logró <strong>${d.admitidosMatri} ventas nuevas concretadas</strong>, pero el programa graduó a <strong>${d.egresados} estudiantes</strong> de fin de ciclo. Tu saldo de reemplazo es de <strong>${d.brechaReemplazo}</strong> alumnos en diferencia.`;
+                
+                const nivelStr = document.getElementById('filtroNivel').value;
+                let textoImpacto = "a 5 años";
+                if (nivelStr === 'posgrado') textoImpacto = "a corto plazo (mínimo 2 semestres académicos)";
+                else if (nivelStr === 'institucional') textoImpacto = "a lo largo de su ciclo de vida (desde 2 semestres hasta 5 años)";
+                eAfe.innerHTML = `Altera la sostenibilidad estructural del programa ${textoImpacto}. Un programa sin reemplazo generacional positivo comienza a 'envejecer' y a perder competitividad y rentabilidad de forma progresiva y silenciosa.`;
+                
+                eRec.innerHTML = "Ajustar agresivamente la cuota comercial mensual (meta de leads y matriculados) para garantizar que, como regla básica, la cuota de captación supere el volumen previsible de estudiantes de último ciclo próximos a egresar.";
+            }
+            else if (tipo === 'adquisicionVsAbandono') {
+                mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-slate-800"; 
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg> Perspectiva del Analista: Captación vs Abandono`;
+                eCalc.textContent = "Comparación directa bruta: (Admitidos Matriculados Nuevos) VS (No Matriculados Totales)";
+                eImp.innerHTML = "Como analista de datos, considero esta la métrica más objetiva de salud a corto plazo. Revela el <strong>'Síndrome de la Cubeta Agujereada' (Leaky Bucket)</strong>: no importa cuánta agua (ventas) viertas desde marketing, si los agujeros (deserción) son más grandes, el nivel de la piscina caerá inexorablemente.";
+                eInt.innerHTML = "Una proporción sana exige que las nuevas ventas superen por mucho al abandono natural. Si la barra roja (Deserción) supera o empata a la verde (Captación), estás quemando millones en publicidad solo para intentar mantenerte estático, lo cual es financieramente insostenible.";
+                eApl.innerHTML = `Lograste captar <strong>${d.admitidosMatri} nuevos alumnos</strong>, pero en paralelo <strong>${d.noMatri} estudiantes decidieron no continuar</strong>. Tu diferencial de retención en esta ventana es de <strong>${d.admitidosMatri - d.noMatri}</strong> alumnos.`;
+                eAfe.innerHTML = "Destruye el margen de rentabilidad institucional. Adquirir un nuevo alumno (CAC - Customer Acquisition Cost) cuesta estadísticamente entre 3 y 5 veces más que retener a uno actual. Depender de ventas para tapar la deserción agota drásticamente el presupuesto de marketing.";
+                eRec.innerHTML = "<strong>Recomendación Ejecutiva:</strong> Congela temporalmente el aumento del presupuesto publicitario ('Performance Marketing') y redirige agresivamente esos fondos a un escuadrón de inteligencia académica. Debes diagnosticar de inmediato la causa-raíz del abandono: ¿Es fricción económica de pensiones, mala experiencia en la plataforma virtual, o baja calidad en la malla curricular? Prioriza tapar los agujeros antes de abrir más la manguera de ventas.";
+            }
+            else if (tipo === 'trendCrecimiento') {
+                mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-emerald-600";
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg> Evolución del Crecimiento Neto`;
+                eCalc.textContent = "Seguimiento histórico continuo del indicador de Crecimiento Neto Estudiantil a lo largo del calendario.";
+                eImp.innerHTML = "Permite identificar <strong>estacionalidades operativas macroscópicas</strong>. Sirve para contextualizar el dato actual sabiendo si se trata de un comportamiento cíclico esperable o de una anomalía estadística.";
+                eInt.innerHTML = "Curvas ascendentes o con picos repetitivos reafirman un proceso de tracción ininterrumpido. Valles o caídas drásticas delimitan los meses críticos donde sistemáticamente predomina la deserción o baja matriculación.";
+                eApl.innerHTML = `Tu último marcador reporta un crecimiento neto de <strong>${d.crecimientoNeto}</strong>. Al contrastar este punto con el gráfico, puedes dimensionar si la sede presenta una tendencia trimestral expansiva o contráctil.`;
+                eAfe.innerHTML = "Afecta la previsibilidad y la confiabilidad del 'Forecasting' financiero (flujo de caja proyectado) de la sede universitaria para el semestre venidero.";
+                eRec.innerHTML = "Mapear de inmediato los 'meses valle' (aquellos de mayor caída histórica) e inyectar anticipadamente recursos de marketing comercial o campañas telefónicas de fidelización exactamente en esos periodos para mitigar el impacto.";
+            }
+            else if (tipo === 'trendEfectividad') {
+                mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-purple-600";
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg> Tendencia de Efectividad Comercial`;
+                eCalc.textContent = "Registro evolutivo de la Tasa de Conversión Final (% de Matriculados sobre Admitidos Viables).";
+                eImp.innerHTML = "Supervisa la <strong>disciplina y eficacia longitudinal del equipo comercial</strong>. Permite auditar si los esfuerzos y capacitaciones de ventas están generando cierres sostenidos o perdiendo tracción.";
+                eInt.innerHTML = "La estabilidad operativa exige que la curva se mantenga plana sobre su banda de eficiencia óptima (usualmente superior al 70%) o con pendiente creciente. Desplomes apuntan a una crisis directa de conversión y persuasión.";
+                eApl.innerHTML = `Actualmente, tu fuerza de ventas cierra al <strong>${d.tasaEfComercial}%</strong> de los admitidos. Analiza el gráfico: si la línea muestra declive frente al mes pasado, tu equipo está perdiendo agilidad y eficacia de cierre.`;
+                eAfe.innerHTML = "El hundimiento de esta métrica infla dramáticamente el Costo de Adquisición de Cliente (CAC), volviendo improductivas y deficitarias todas las campañas publicitarias digitales previas.";
+                eRec.innerHTML = "Al detectar tendencias bajistas: ejecutar auditorías exprés (escucha de llamadas aleatorias de asesores), actualizar manual de objeciones por factores de precio y disminuir al máximo el tiempo de respuesta inicial ante un nuevo lead interesado ('speed to lead').";
+            }
+            else if (tipo === 'trendAdqVsAbandono') {
+                mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-slate-800";
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg> Histórico: Captación vs. Deserción`;
+                eCalc.textContent = "Comparación histórica interactiva de (Admitidos Matriculados) VS (No Matriculados Totales) a lo largo del calendario.";
+                eImp.innerHTML = "Es la prueba ácida de salud a largo plazo. Permite auditar si el <strong>'Síndrome de la Cubeta Agujereada'</strong> se está agravando o mitigando con el tiempo, revelando patrones y estacionalidades críticas del abandono.";
+                eInt.innerHTML = "El objetivo estratégico es mantener la línea verde (Captación) como un colchón holgado por encima de la roja (Deserción). Si en algún mes las líneas convergen o la roja sobrepasa a la verde, el programa ha entrado en 'recesión técnica'.";
+                eApl.innerHTML = "Al evaluar el gráfico, verifica si la línea roja sube en un mes particular y se repite. Ese comportamiento dictamina un pico cíclico de abandono al que te debes anticipar.";
+                eAfe.innerHTML = "Un cruce negativo prolongado anula completamente la rentabilidad del trimestre. El equipo comercial estará quemando presupuesto intentando tapar deserciones pasadas en lugar de generar crecimiento e ingresos frescos.";
+                eRec.innerHTML = "<strong>Inteligencia Operativa:</strong> Sincroniza tus esfuerzos preventivos de acuerdo al gráfico. Si notas que históricamente la línea roja de deserción sufre un pico en un mes particular, debes obligatoriamente iniciar tus campañas masivas de refinanciación e intervención tutorial un mes <em>antes</em> para aplanar la curva de fuga.";
+            }
+            else if (tipo === 'trendTotal') {
+                mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-blue-600";
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg> Evolución Histórica: Total Matriculados`;
+                eCalc.textContent = "Suma aritmética mes a mes del volumen total de estudiantes activos.";
+                eImp.innerHTML = "Permite tener la <strong>visión gerencial más clara del tamaño del programa</strong>. Muestra la dirección general de la población activa a lo largo del tiempo.";
+                eInt.innerHTML = "Una tendencia constante o al alza indica salud institucional. Caídas marcadas reflejan momentos de alta deserción o cierres de ciclo con bajos ingresos.";
+                eApl.innerHTML = `Observa el gráfico principal: refleja el volumen total de alumnos. Las caídas pronunciadas deben coincidir con picos de deserción o finales de semestre.`;
+                eAfe.innerHTML = "Afecta directamente el presupuesto y la previsión de ingresos (Forecasting) de la Universidad. El volumen total es el que multiplica la pensión mensual.";
+                eRec.innerHTML = "Identifica los meses donde la curva empieza a aplanarse o caer, e inyecta presupuesto comercial un mes antes para mantener la inercia.";
+            }
+            else if (tipo === 'matriz') {
+                mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-indigo-600";
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 10l-2 1m0 0l-2-1m2 1v2.5M20 7l-2 1m2-1l-2-1m2 1v2.5M14 4l-2-1-2 1M4 7l2-1M4 7l2 1M4 7v2.5M12 21l-2-1m2 1l2-1m-2 1v-2.5M6 18l-2-1v-2.5M18 18l2-1v-2.5"></path></svg> Matriz Estratégica (Cuadrante BCG)`;
+                eCalc.textContent = "Gráfico de Dispersión (Scatter): X = % Efectividad Comercial, Y = Balance de Retención (Absoluto). Burbuja = Tamaño del Programa.";
+                eImp.innerHTML = "Permite clasificar instantáneamente todos los programas en un plano bidimensional. Muestra exactamente quién sabe vender, quién sabe retener en números reales, y quién domina ambos frentes.";
+                eInt.innerHTML = "Las líneas punteadas del gráfico marcan los umbrales que separan lo 'Malo' de lo 'Bueno': <strong class='text-emerald-600'>Ventas Buenas > 70%</strong> y <strong class='text-emerald-600'>Balance de Retención > 0</strong>.<br><br><strong>1. Estrellas (Arriba Derecha - <span class='text-emerald-600 font-bold'>ZONA BUENA</span>):</strong> Superan ambas metas. Venden y retienen bien.<br><strong>2. Fugas (Abajo Derecha):</strong> Venden bien pero pierden más alumnos de los que recuperan.<br><strong>3. Dormidos (Arriba Izquierda):</strong> Retienen de forma excelente, pero sus ventas son malas.<br><strong>4. Críticos (Abajo Izquierda - <span class='text-red-600 font-bold'>ZONA MALA</span>):</strong> Sus ventas y retención son malas.";
+                eApl.innerHTML = `Revisa las burbujas grandes en tu gráfico actual. Las burbujas posicionadas en el área sombreada verde son las de mejor salud. Si una burbuja grande está en el cuadrante inferior izquierdo (Críticos), tienes una crisis financiera en puerta que requiere intervención inmediata.`;
+                eAfe.innerHTML = "Asignar presupuesto publicitario a un programa en el cuadrante de 'Fugas' o 'Críticos' es destruir rentabilidad financiera de inmediato.";
+                eRec.innerHTML = "<strong>Estrellas:</strong> Inyéctales todo el presupuesto de marketing. <strong>Dormidos:</strong> Mejora los guiones de venta y dale visibilidad, su producto es excelente porque nadie se va. <strong>Fugas:</strong> Detén el marketing y audita el servicio al estudiante y calidad académica. <strong>Críticos:</strong> Reestructuración total o cierre del programa.";
+            }
+            else if (tipo === 'benchmarkDesercion') {
+                const nivelStr = document.getElementById('filtroNivel').value;
+                const limiteMax = (nivelStr === 'posgrado') ? 5 : 15;
+                mHeader.className = "p-5 border-b flex justify-between items-center text-white bg-red-500"; 
+                mTitle.innerHTML = `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg> Perspectiva del Analista: Benchmark de Deserción Mensual`;
+                eCalc.textContent = "(No Matriculados / Total de Alumnos Activos) * 100";
+                eImp.innerHTML = "Establece tu <strong>Índice de Normalidad</strong>. Permite evaluar objetivamente si tu volumen de bajas es un comportamiento orgánico (natural) del mercado, o si constituye una emergencia operativa.";
+                eInt.innerHTML = "Según métricas estándar (MINEDU) para la educación online/virtual en LATAM, el nivel aceptable varía por segmento:<br><br>" + 
+                "• <strong>Posgrado:</strong> Normal hasta el <strong>5%</strong> mensual.<br>" +
+                "• <strong>Pregrado:</strong> Normal hasta el <strong>15%</strong> mensual debido a la diferente madurez y responsabilidades del perfil.<br>";
+                eApl.innerHTML = `Observa el gráfico de barras actual: la línea punteada roja marca el Límite Máximo para tu segmento (${limiteMax}%). Si alguna barra sobrepasa esta línea, en ese mes perdiste alumnos a un ritmo atípico y peligroso.`;
+                eAfe.innerHTML = "Superar el umbral límite anula cualquier esfuerzo de rentabilidad a largo plazo. Tu base de clientes se está reduciendo más rápido de lo que tus asesores pueden vender.";
+                eRec.innerHTML = "Si superas el límite normal, activa un comité de retención de emergencia. Aplica encuestas obligatorias de salida (exit surveys) para identificar inmediatamente el 'Pain Point' o dolor principal (¿Dinero, Tiempo o Plataforma?) y generar medidas de contención (ej. congelamiento de cuotas, pausas académicas, refinanciamiento).";
+            }
+
+            modal.classList.remove('hidden');
+        }
+
+        function cerrarModalGrafico() {
+            document.getElementById('chartModal').classList.add('hidden');
+        }
+
+        // --- 5. FUNCIONES PARA DATOS OFFLINE (FALLBACK) ---
+        function handleFileUpload(event, nivel) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById('uploadStatus');
+            statusEl.innerHTML = `<span class="text-amber-600 font-bold">Procesando archivo ${file.name}...</span>`;
+
+            Papa.parse(file, {
+                header: true, skipEmptyLines: true,
+                complete: function(results) {
+                    if (results.errors.length && results.data.length === 0) {
+                        statusEl.innerHTML = `<span class="text-red-600 font-bold">Error al leer el archivo CSV.</span>`;
+                        return;
+                    }
+
+                    const mappedData = results.data.map(row => {
+                        const getCol = (name) => {
+                            const key = Object.keys(row).find(k => k.trim().toLowerCase() === name.toLowerCase());
+                            return key ? row[key] : null;
+                        };
+                        return {
+                            mes: getCol('Mes') || 'Desconocido',
+                            programa: getCol('Programa') || 'Sin Programa',
+                            egresados: parseInt(getCol('Egresados')) || 0,
+                            noMatri: parseInt(getCol('No matrí.')) || parseInt(getCol('No matri.')) || 0,
+                            admitidos: parseInt(getCol('Admitidos')) || 0,
+                            admitidosMatri: parseInt(getCol('Admitidos Matriculados')) || 0,
+                            recuperados: parseInt(getCol('Recuperados')) || 0,
+                            matDistancia: parseInt(getCol('Matríc. regular a Distancia')) || parseInt(getCol('Matric. regular a Distancia')) || 0,
+                            matPresencial: parseInt(getCol('Matríc. regular Presencial')) || parseInt(getCol('Matric. regular Presencial')) || 0,
+                            total: parseInt(getCol('Estudiantes matrí. TOTAL')) || parseInt(getCol('Estudiantes matri. TOTAL')) || 0
+                        };
+                    });
+
+                    const cleanData = mappedData.filter(r => r.programa !== 'Sin Programa' && r.mes !== 'Desconocido');
+
+                    if(cleanData.length === 0) {
+                        statusEl.innerHTML = `<span class="text-red-600 font-bold">El archivo no tiene el formato correcto.</span>`;
+                        return;
+                    }
+
+                    db[nivel] = procesarDatos(cleanData);
+                    statusEl.innerHTML = `<span class="text-emerald-600 font-bold">¡Éxito!</span> Se cargaron ${cleanData.length} registros para ${nivel.toUpperCase()}.`;
+                    document.getElementById('filtroNivel').value = nivel;
+                    actualizarMeses(); actualizarProgramas(); actualizarDashboard();
+                },
+                error: function(err) { statusEl.innerHTML = `<span class="text-red-600 font-bold">Error: ${err.message}</span>`; }
+            });
+            event.target.value = '';
+        }
+
+        const dataDemoPregrado = [
+            { mes: 'Enero', programa: 'Carrera de Educación', egresados: 4, noMatri: 107, admitidos: 44, admitidosMatri: 27, recuperados: 76, matDistancia: 797, matPresencial: 71, total: 895 },
+            { mes: 'Enero', programa: 'Carrera de Contabilidad', egresados: 0, noMatri: 29, admitidos: 7, admitidosMatri: 3, recuperados: 27, matDistancia: 77, matPresencial: 34, total: 141 },
+            { mes: 'Enero', programa: 'Carrera de Economía', egresados: 0, noMatri: 21, admitidos: 6, admitidosMatri: 4, recuperados: 9, matDistancia: 86, matPresencial: 24, total: 123 },
+            { mes: 'Enero', programa: 'Carrera de Derecho (Sin AP)', egresados: 2, noMatri: 91, admitidos: 21, admitidosMatri: 16, recuperados: 0, matDistancia: 209, matPresencial: 18, total: 243 },
+            { mes: 'Febrero', programa: 'Carrera de Educación', egresados: 16, noMatri: 117, admitidos: 108, admitidosMatri: 79, recuperados: 71, matDistancia: 693, matPresencial: 74, total: 917 },
+            { mes: 'Febrero', programa: 'Carrera de Contabilidad', egresados: 1, noMatri: 35, admitidos: 4, admitidosMatri: 1, recuperados: 16, matDistancia: 90, matPresencial: 33, total: 140 },
+            { mes: 'Febrero', programa: 'Carrera de Economía', egresados: 1, noMatri: 18, admitidos: 5, admitidosMatri: 3, recuperados: 16, matDistancia: 88, matPresencial: 22, total: 129 },
+            { mes: 'Febrero', programa: 'Carrera de Derecho (Sin AP)', egresados: 2, noMatri: 78, admitidos: 20, admitidosMatri: 15, recuperados: 12, matDistancia: 215, matPresencial: 16, total: 240 }
+        ];
+
+        const dataDemoPosgrado = [
+            { mes: 'Enero', programa: 'Maestría en GSS', egresados: 58, noMatri: 37, admitidos: 60, admitidosMatri: 50, recuperados: 60, matDistancia: 599, matPresencial: 0, total: 709 },
+            { mes: 'Enero', programa: 'Maestría en Salud Ocupacional', egresados: 49, noMatri: 28, admitidos: 38, admitidosMatri: 34, recuperados: 98, matDistancia: 446, matPresencial: 0, total: 578 },
+            { mes: 'Enero', programa: 'Maestría en Medicina', egresados: 2, noMatri: 0, admitidos: 19, admitidosMatri: 18, recuperados: 32, matDistancia: 83, matPresencial: 0, total: 133 },
+            { mes: 'Enero', programa: 'Maestría en Derecho y C. Penales', egresados: 1, noMatri: 34, admitidos: 43, admitidosMatri: 37, recuperados: 53, matDistancia: 295, matPresencial: 0, total: 385 },
+            { mes: 'Enero', programa: 'Maestría en Sol. de Conflictos', egresados: 11, noMatri: 11, admitidos: 10, admitidosMatri: 9, recuperados: 10, matDistancia: 90, matPresencial: 0, total: 109 },
+            { mes: 'Enero', programa: 'Maestría en e-business', egresados: 0, noMatri: 5, admitidos: 1, admitidosMatri: 1, recuperados: 3, matDistancia: 30, matPresencial: 0, total: 34 },
+            { mes: 'Enero', programa: 'Maestría en Educación', egresados: 8, noMatri: 7, admitidos: 10, admitidosMatri: 8, recuperados: 22, matDistancia: 73, matPresencial: 0, total: 103 },
+            { mes: 'Enero', programa: 'Maestría en Contabilidad', egresados: 18, noMatri: 6, admitidos: 25, admitidosMatri: 17, recuperados: 56, matDistancia: 95, matPresencial: 0, total: 168 },
+            { mes: 'Enero', programa: 'Maestría en Ciencias Políticas', egresados: 5, noMatri: 7, admitidos: 13, admitidosMatri: 11, recuperados: 0, matDistancia: 31, matPresencial: 0, total: 42 },
+            { mes: 'Enero', programa: 'Maestría en Seguridad Ciudadana', egresados: 5, noMatri: 1, admitidos: 8, admitidosMatri: 6, recuperados: 1, matDistancia: 46, matPresencial: 0, total: 53 },
+            { mes: 'Febrero', programa: 'Maestría en GSS', egresados: 2, noMatri: 44, admitidos: 86, admitidosMatri: 75, recuperados: 90, matDistancia: 610, matPresencial: 0, total: 775 },
+            { mes: 'Febrero', programa: 'Maestría en Salud Ocupacional', egresados: 0, noMatri: 31, admitidos: 71, admitidosMatri: 63, recuperados: 40, matDistancia: 460, matPresencial: 0, total: 563 },
+            { mes: 'Febrero', programa: 'Maestría en Medicina', egresados: 0, noMatri: 3, admitidos: 19, admitidosMatri: 17, recuperados: 5, matDistancia: 97, matPresencial: 0, total: 119 },
+            { mes: 'Febrero', programa: 'Maestría en Derecho y C. Penales', egresados: 35, noMatri: 25, admitidos: 92, admitidosMatri: 79, recuperados: 46, matDistancia: 337, matPresencial: 0, total: 462 },
+            { mes: 'Febrero', programa: 'Maestría en Sol. de Conflictos', egresados: 2, noMatri: 8, admitidos: 25, admitidosMatri: 19, recuperados: 5, matDistancia: 70, matPresencial: 0, total: 94 },
+            { mes: 'Febrero', programa: 'Maestría en e-business', egresados: 12, noMatri: 4, admitidos: 8, admitidosMatri: 8, recuperados: 8, matDistancia: 25, matPresencial: 0, total: 41 },
+            { mes: 'Febrero', programa: 'Maestría en Educación', egresados: 14, noMatri: 4, admitidos: 17, admitidosMatri: 15, recuperados: 3, matDistancia: 73, matPresencial: 0, total: 91 },
+            { mes: 'Febrero', programa: 'Maestría en Contabilidad', egresados: 18, noMatri: 8, admitidos: 38, admitidosMatri: 34, recuperados: 12, matDistancia: 141, matPresencial: 0, total: 187 },
+            { mes: 'Febrero', programa: 'Maestría en Ciencias Políticas', egresados: 2, noMatri: 1, admitidos: 18, admitidosMatri: 12, recuperados: 2, matDistancia: 38, matPresencial: 0, total: 52 },
+            { mes: 'Febrero', programa: 'Maestría en Seguridad Ciudadana', egresados: 0, noMatri: 3, admitidos: 13, admitidosMatri: 9, recuperados: 3, matDistancia: 78, matPresencial: 0, total: 90 }
+        ];
+
+        function restaurarDemo() {
+            db.pregrado = procesarDatos([...dataDemoPregrado]);
+            db.posgrado = procesarDatos([...dataDemoPosgrado]);
+            document.getElementById('uploadStatus').textContent = "Se ha restaurado la data de demostración base (Enero y Febrero).";
+            document.getElementById('filtroNivel').value = 'institucional';
+            actualizarMeses(); actualizarProgramas(); actualizarDashboard();
+        }
+
+        // --- 6. INTEGRACIÓN DE INTELIGENCIA ARTIFICIAL GEMINI ---
+        function solicitarAnalisisIA() {
+            if (!datosActualesGlobal) return;
+            const btn = document.getElementById('btnIA');
+            const contIA = document.getElementById('contenedorIA');
+            const loadIA = document.getElementById('loadingIA');
+            const textIA = document.getElementById('textoIA');
+            const nivel = document.getElementById('filtroNivel').options[document.getElementById('filtroNivel').selectedIndex].text;
+            const mes = document.getElementById('filtroMes').value;
+
+            btn.disabled = true;
+            btn.classList.add('opacity-50', 'cursor-not-allowed');
+            contIA.classList.remove('hidden');
+            loadIA.classList.remove('hidden');
+            textIA.innerHTML = "";
+
+            if (typeof google !== 'undefined' && typeof google.script !== 'undefined') {
+                google.script.run
+                    .withSuccessHandler(function(respuesta) {
+                        loadIA.classList.add('hidden');
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        textIA.innerHTML = formatearTextoIA(respuesta);
+                    })
+                    .withFailureHandler(function(error) {
+                        loadIA.classList.add('hidden');
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                        textIA.innerHTML = "<span class='text-red-500'>Error de conexión con la IA. Inténtalo de nuevo.</span>";
+                    })
+                    .analizarConGemini(datosActualesGlobal, nivel, mes);
+            } else {
+                // Modo fallback offline
+                setTimeout(() => {
+                    loadIA.classList.add('hidden');
+                    btn.disabled = false;
+                    btn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    textIA.innerHTML = "<strong>Modo Offline:</strong> La integración con Gemini IA requiere ejecutarse dentro de Google Apps Script.";
+                }, 1500);
+            }
+        }
+        
+        function formatearTextoIA(texto) {
+            // Convierte negritas de asteriscos dobles a html
+            return texto.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        }
+
+        // Listeners
+        document.getElementById('filtroNivel').addEventListener('change', () => { actualizarMeses(); actualizarProgramas(); actualizarDashboard(); document.getElementById('contenedorIA').classList.add('hidden'); });
+        document.getElementById('filtroMes').addEventListener('change', () => { actualizarProgramas(); actualizarDashboard(); document.getElementById('contenedorIA').classList.add('hidden'); });
+        document.getElementById('filtroPrograma').addEventListener('change', () => { actualizarDashboard(); document.getElementById('contenedorIA').classList.add('hidden'); });
+
+        document.getElementById('kpiModal').addEventListener('click', function(e) { if (e.target === this) cerrarModal(); });
+        document.getElementById('chartModal').addEventListener('click', function(e) { if (e.target === this) cerrarModalGrafico(); });
+
+    </script>
+</body>
+</html>
