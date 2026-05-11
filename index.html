@@ -132,7 +132,7 @@
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"></path></svg>
             Haz clic en las tarjetas para ver el análisis detallado de la métrica
         </div>
-        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
             <div class="card kpi-card border-t-4 border-blue-500 relative group" onclick="abrirModalKPI('total')">
                 <div class="absolute top-4 right-4 text-blue-300 group-hover:text-blue-500 transition-colors">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -185,6 +185,16 @@
                     <div id="kpiDesAbsoluto" class="text-sm font-medium text-gray-500"></div>
                 </div>
                 <div class="text-xs text-gray-500 mt-2">Bajas / Total Activos</div>
+            </div>
+
+            <!-- TARJETA INFORMATIVA: Alumnos en Tránsito (Asig. 2 Meses) -->
+            <div class="card border-t-4 border-cyan-500 relative">
+                <div class="absolute top-4 right-4 text-cyan-300">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                </div>
+                <div class="metric-label">En Tránsito (2 Meses)</div>
+                <div id="kpiDosMeses" class="metric-value text-cyan-600">0</div>
+                <div class="text-xs text-gray-500 mt-2">Asignaturas de duración extendida</div>
             </div>
         </div>
 
@@ -701,6 +711,9 @@
             let limiteDesercion = (nivel === 'posgrado') ? 5 : 15;
             kpiDesercion.className = `metric-value ${datos.tasaDesercion <= limiteDesercion ? 'positive' : 'negative'}`;
             document.getElementById('kpiDesAbsoluto').textContent = `(${datos.noMatri} alum.)`;
+
+            // TARJETA INFORMATIVA: Alumnos en Tránsito (2 Meses)
+            document.getElementById('kpiDosMeses').textContent = (datos.dosMeses || 0).toLocaleString();
 
             generarDiagnostico(datos, isGlobal, nivel);
             generarComparativo(datos, nivel, mes, isGlobal);
@@ -1250,7 +1263,8 @@
                             recuperados: parseInt(getCol('Recuperados')) || 0,
                             matDistancia: parseInt(getCol('Matríc. regular a Distancia')) || parseInt(getCol('Matric. regular a Distancia')) || 0,
                             matPresencial: parseInt(getCol('Matríc. regular Presencial')) || parseInt(getCol('Matric. regular Presencial')) || 0,
-                            total: parseInt(getCol('Estudiantes matrí. TOTAL')) || parseInt(getCol('Estudiantes matri. TOTAL')) || 0
+                            total: parseInt(getCol('Estudiantes matrí. TOTAL')) || parseInt(getCol('Estudiantes matri. TOTAL')) || 0,
+                            dosMeses: parseInt(getCol('Alumnos en Asignaturas de 2 Meses')) || 0
                         };
                     });
 

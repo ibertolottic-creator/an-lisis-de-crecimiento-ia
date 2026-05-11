@@ -131,9 +131,14 @@ function sheetToObjects(sheet) {
 
 function analizarConGemini(datos, nivel, mes) {
   const API_KEY = "AIzaSyDzVb8Y6ZWxH3Rs67Ai-sO4AFjESbjQpcU";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${API_KEY}`;
   
-const prompt = `Eres un Director Estratégico Universitario experto en análisis de datos.
+  // Modelos: principal y respaldo (cuando hay alta demanda)
+  const MODELOS = [
+    "gemini-2.5-flash",
+    "gemini-2.0-flash"
+  ];
+  
+  const prompt = `Eres un Director Estratégico Universitario experto en análisis de datos.
 Analiza los siguientes resultados del nivel académico "${nivel}" en el mes de "${mes}".
 Datos:
 - Total Matriculados: ${datos.total}
@@ -157,15 +162,27 @@ No uses formato markdown excesivo, solo negritas para resaltar.`;
     muteHttpExceptions: true
   };
 
-  try {
-    const response = UrlFetchApp.fetch(url, options);
-    const result = JSON.parse(response.getContentText());
-    if (result.error) {
-      return "Error de la IA: " + result.error.message;
+  for (let i = 0; i < MODELOS.length; i++) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELOS[i]}:generateContent?key=${API_KEY}`;
+      const response = UrlFetchApp.fetch(url, options);
+      const result = JSON.parse(response.getContentText());
+      
+      if (result.error) {
+        // Si es error de alta demanda y hay modelo de respaldo, continuar al siguiente
+        if (i < MODELOS.length - 1 && (result.error.code === 429 || result.error.code === 503 || 
+            result.error.message.toLowerCase().includes("high demand"))) {
+          continue; // Intentar con el siguiente modelo
+        }
+        return "Error de la IA: " + result.error.message;
+      }
+      
+      const modelUsado = i > 0 ? ` [Respaldo: ${MODELOS[i]}]` : "";
+      return result.candidates[0].content.parts[0].text + modelUsado;
+    } catch (e) {
+      if (i < MODELOS.length - 1) continue;
+      return "Ocurrió un error al contactar a la IA: " + e.message;
     }
-    return result.candidates[0].content.parts[0].text;
-  } catch (e) {
-    return "Ocurrió un error al contactar a la IA: " + e.message;
   }
 }
 
