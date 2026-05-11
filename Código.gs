@@ -130,12 +130,13 @@ function sheetToObjects(sheet) {
 }
 
 function analizarConGemini(datos, nivel, mes) {
-  // La API Key se lee de Propiedades del Script (seguro, no se sube a GitHub)
+  // OPCIÓN SEGURA: La API Key se lee de Propiedades del Script (no se sube a GitHub)
   // Configurar en: Apps Script → ⚙️ Configuración → Propiedades del script → GEMINI_API_KEY
-  const API_KEY = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY");
+  const API_KEY = PropertiesService.getScriptProperties().getProperty("GEMINI_API_KEY") 
+                  || "COLOCA_AQUI_TU_APIKEY_DE_GEMINI";
   
-  if (!API_KEY) {
-    return "Error: No se encontró la API Key. Ve a Configuración del proyecto → Propiedades del script → agrega GEMINI_API_KEY con tu clave de Google AI Studio.";
+  if (API_KEY === "COLOCA_AQUI_TU_APIKEY_DE_GEMINI") {
+    return "Error: Debes configurar tu API Key de Gemini. Ve a Configuración del proyecto → Propiedades del script → agrega GEMINI_API_KEY con tu clave de https://aistudio.google.com/apikey";
   }
   
   // Modelos: principal y respaldo (cuando hay alta demanda)
